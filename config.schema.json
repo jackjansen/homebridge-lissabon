@@ -1,5 +1,5 @@
 {
-  "pluginAlias": "ExampleHomebridgePlugin",
+  "pluginAlias": "LissabonLighting",
   "pluginType": "platform",
   "singular": true,
   "schema": {
@@ -9,7 +9,15 @@
         "title": "Name",
         "type": "string",
         "required": true,
-        "default": "Example Dynamic Platform"
+        "default": "LissabonLighting"
+      },
+      "devices" : {
+        "title" : "Watched Devices",
+        "type" : "array",
+        "items" : {
+          "title" : "Name or Address",
+          "type" : "string"
+        }
       }
     }
   }

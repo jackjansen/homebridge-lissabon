@@ -80,6 +80,13 @@ You can now start Homebridge, use the `-D` flag so you can see debug log message
 homebridge -D
 ```
 
+Alternatively, to keep the web UI active (at least on a RPi):
+
+```
+hb-service stop
+sudo -u homebridge homebridge -D -U /var/lib/homebridge
+```
+
 ## Watch For Changes and Build Automatically
 
 If you want to have your code compile automatically as you make changes, and restart Homebridge automatically between changes, you first need to add your plugin as a platform in `~/.homebridge/config.json`:
