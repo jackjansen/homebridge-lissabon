@@ -71,7 +71,7 @@ npm run build
 Run this command so your global install of Homebridge can discover the plugin in your development environment:
 
 ```
-npm link
+[sudo] npm link
 ```
 
 You can now start Homebridge, use the `-D` flag so you can see debug log messages in your plugin:
@@ -83,7 +83,7 @@ homebridge -D
 Alternatively, to keep the web UI active (at least on a RPi):
 
 ```
-hb-service stop
+[sudo] hb-service stop
 sudo -u homebridge homebridge -D -U /var/lib/homebridge
 ```
 

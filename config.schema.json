@@ -11,12 +11,28 @@
         "required": true,
         "default": "LissabonLighting"
       },
-      "devices" : {
-        "title" : "Watched Devices",
-        "type" : "array",
-        "items" : {
-          "title" : "Name or Address",
-          "type" : "string"
+      "options" : {
+        "title" : "Options",
+        "type" : "object",
+        "properties" : {
+          "devices" : {
+            "title" : "Lissabon Devices",
+            "type" : "array",
+            "items" : {
+              "title" : "Device",
+              "type" : "object",
+              "properties" : {
+                "address" : {
+                  "title" : "IP address or hostname",
+                  "type" : "string"
+                },
+                "name" : {
+                  "title" : "Name",
+                  "type" : "string"
+                }
+              }
+            }
+          }    
         }
       }
     }
