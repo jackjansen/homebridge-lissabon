@@ -13,14 +13,6 @@ import axios from 'axios';
 export class LissabonPlatformAccessory {
   private service: Service;
   private device : LissabonDevice;
-  /**
-   * These are just used to create a working example
-   * You should implement your own code to track the state of your accessory
-   */
-  private exampleStates = {
-    On: false,
-    Brightness: 100,
-  };
 
   constructor(
     private readonly platform: LissabonHomebridgePlatform,
@@ -29,9 +21,9 @@ export class LissabonPlatformAccessory {
     this.device = accessory.context.device;
     // set accessory information
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
-      .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Default-Manufacturer')
-      .setCharacteristic(this.platform.Characteristic.Model, 'Default-Model')
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, 'Default-Serial');
+      .setCharacteristic(this.platform.Characteristic.Manufacturer, 'jackjansen')
+      .setCharacteristic(this.platform.Characteristic.Model, 'Lissabon Dimmer')
+      .setCharacteristic(this.platform.Characteristic.SerialNumber, '0000');
 
     // get the LightBulb service if it exists, otherwise create a new LightBulb service
     // you can create multiple services for each accessory
@@ -51,8 +43,8 @@ export class LissabonPlatformAccessory {
 
     // register handlers for the Brightness Characteristic
     this.service.getCharacteristic(this.platform.Characteristic.Brightness)
-      .onSet(this.setBrightness.bind(this));       // SET - bind to the 'setBrightness` method below
-
+      .onSet(this.setBrightness.bind(this))       // SET - bind to the 'setBrightness` method below
+      .onGet(this.getBrightness.bind(this));
   }
 
   /**
@@ -60,18 +52,15 @@ export class LissabonPlatformAccessory {
    * These are sent when the user changes the state of an accessory, for example, turning on a Light bulb.
    */
   async setOn(value: CharacteristicValue) {
-    // implement your own code to turn your device on/off
-    this.exampleStates.On = value as boolean;
 
     this.platform.log.info('Set Characteristic On ->', value, ' to ', this.device.address);
     try {
-      const reply = await axios.put(
+      await axios.put(
         `http://${this.device.address}/api/dimmer`,
         {
           isOn: value as boolean,
         },
       );
-      this.platform.log.info('Returned ', reply);
 
     } catch(error) {
       this.platform.log.debug('Error: ', error);
@@ -97,7 +86,6 @@ export class LissabonPlatformAccessory {
 
     try {
       const { data } = await axios.get(`http://${this.device.address}/api/dimmer`);
-      this.platform.log.info('Returned ', data);
       const isOn = data.isOn;
       this.platform.log.info('Get Characteristic On ->', isOn, ' from ', this.device.address);
 
@@ -118,9 +106,73 @@ export class LissabonPlatformAccessory {
    */
   async setBrightness(value: CharacteristicValue) {
     // implement your own code to set the brightness
-    this.exampleStates.Brightness = value as number;
 
-    this.platform.log.debug('Set Characteristic Brightness -> ', value, ' to ', this.device.address);
+    this.platform.log.info('Set Characteristic Brightness -> ', value, ' to ', this.device.address);
+    try {
+      await axios.put(
+        `http://${this.device.address}/api/dimmer`,
+        {
+          level: (value as number) / 100.0,
+        },
+      );
+
+    } catch(error) {
+      this.platform.log.debug('Error: ', error);
+      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    }
   }
 
+  async getBrightness(): Promise<CharacteristicValue> {
+    // implement your own code to check if the device is on
+
+    try {
+      const { data } = await axios.get(`http://${this.device.address}/api/dimmer`);
+      const brightness = Math.round(data.level * 100);
+      this.platform.log.info('Get Characteristic Brightness ->', brightness, ' from ', this.device.address);
+
+      // if you need to return an error to show the device as "Not Responding" in the Home app:
+      // throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+
+      return brightness;
+    } catch(error) {
+      this.platform.log.debug('Error: ', error);
+      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    }
+  }
+
+  async setTemperature(value: CharacteristicValue) {
+    // implement your own code to set the brightness
+
+    this.platform.log.info('Set Characteristic Temperature -> ', value, ' to ', this.device.address);
+    try {
+      await axios.put(
+        `http://${this.device.address}/api/dimmer`,
+        {
+          temperature: 1000000.0 / (value as number),
+        },
+      );
+
+    } catch(error) {
+      this.platform.log.debug('Error: ', error);
+      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    }
+  }
+
+  async getTemperature(): Promise<CharacteristicValue> {
+    // implement your own code to check if the device is on
+
+    try {
+      const { data } = await axios.get(`http://${this.device.address}/api/dimmer`);
+      const temperature = 1000000.0 / data.temperature;
+      this.platform.log.info('Get Characteristic Temperature ->', temperature, ' from ', this.device.address);
+
+      // if you need to return an error to show the device as "Not Responding" in the Home app:
+      // throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+
+      return temperature;
+    } catch(error) {
+      this.platform.log.debug('Error: ', error);
+      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    }
+  }
 }
