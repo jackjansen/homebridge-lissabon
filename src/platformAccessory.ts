@@ -3,6 +3,8 @@ import { Service, PlatformAccessory, CharacteristicValue } from 'homebridge';
 import { LissabonHomebridgePlatform } from './platform';
 
 import { LissabonDevice } from './config';
+
+import axios from 'axios';
 /**
  * Platform Accessory
  * An instance of this class is created for each accessory your platform registers
@@ -62,6 +64,19 @@ export class LissabonPlatformAccessory {
     this.exampleStates.On = value as boolean;
 
     this.platform.log.info('Set Characteristic On ->', value, ' to ', this.device.address);
+    try {
+      const reply = await axios.put(
+        `http://${this.device.address}/api/dimmer`,
+        {
+          isOn: value as boolean,
+        },
+      );
+      this.platform.log.info('Returned ', reply);
+
+    } catch(error) {
+      this.platform.log.debug('Error: ', error);
+      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    }
   }
 
   /**
@@ -79,14 +94,22 @@ export class LissabonPlatformAccessory {
    */
   async getOn(): Promise<CharacteristicValue> {
     // implement your own code to check if the device is on
-    const isOn = this.exampleStates.On;
 
-    this.platform.log.info('Get Characteristic On ->', isOn, ' from ', this.device.address);
+    try {
+      const { data } = await axios.get(`http://${this.device.address}/api/dimmer`);
+      this.platform.log.info('Returned ', data);
+      const isOn = data.isOn;
+      this.platform.log.info('Get Characteristic On ->', isOn, ' from ', this.device.address);
 
-    // if you need to return an error to show the device as "Not Responding" in the Home app:
-    // throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+      // if you need to return an error to show the device as "Not Responding" in the Home app:
+      // throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
 
-    return isOn;
+      return isOn;
+    } catch(error) {
+      this.platform.log.debug('Error: ', error);
+      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    }
+
   }
 
   /**
