@@ -3,6 +3,9 @@ import { PlatformConfig } from 'homebridge';
 export type LissabonDevice = {
     address : string;
     name : string;
+    type : string;
+    hasBrightness : boolean;
+    hasTemperature : boolean;
   };
 
 export type LissabonOptions = {

@@ -41,10 +41,19 @@ export class LissabonPlatformAccessory {
       .onSet(this.setOn.bind(this))                // SET - bind to the `setOn` method below
       .onGet(this.getOn.bind(this));               // GET - bind to the `getOn` method below
 
-    // register handlers for the Brightness Characteristic
-    this.service.getCharacteristic(this.platform.Characteristic.Brightness)
-      .onSet(this.setBrightness.bind(this))       // SET - bind to the 'setBrightness` method below
-      .onGet(this.getBrightness.bind(this));
+    if(this.device.hasBrightness) {
+      // register handlers for the Brightness Characteristic
+      this.service.getCharacteristic(this.platform.Characteristic.Brightness)
+        .onSet(this.setBrightness.bind(this))       // SET - bind to the 'setBrightness` method below
+        .onGet(this.getBrightness.bind(this));
+    }
+
+    if(this.device.hasTemperature) {
+      // register handlers for the ColorTemperature Characteristic
+      this.service.getCharacteristic(this.platform.Characteristic.ColorTemperature)
+        .onSet(this.setTemperature.bind(this))       // SET - bind to the 'setBrightness` method below
+        .onGet(this.getTemperature.bind(this));
+    }
   }
 
   /**
@@ -56,7 +65,7 @@ export class LissabonPlatformAccessory {
     this.platform.log.info('Set Characteristic On ->', value, ' to ', this.device.address);
     try {
       await axios.put(
-        `http://${this.device.address}/api/dimmer`,
+        `http://${this.device.address}/api/${this.device.type}`,
         {
           isOn: value as boolean,
         },
@@ -85,7 +94,7 @@ export class LissabonPlatformAccessory {
     // implement your own code to check if the device is on
 
     try {
-      const { data } = await axios.get(`http://${this.device.address}/api/dimmer`);
+      const { data } = await axios.get(`http://${this.device.address}/api/${this.device.type}`);
       const isOn = data.isOn;
       this.platform.log.info('Get Characteristic On ->', isOn, ' from ', this.device.address);
 
@@ -110,7 +119,7 @@ export class LissabonPlatformAccessory {
     this.platform.log.info('Set Characteristic Brightness -> ', value, ' to ', this.device.address);
     try {
       await axios.put(
-        `http://${this.device.address}/api/dimmer`,
+        `http://${this.device.address}/api/${this.device.type}`,
         {
           level: (value as number) / 100.0,
         },
@@ -126,7 +135,7 @@ export class LissabonPlatformAccessory {
     // implement your own code to check if the device is on
 
     try {
-      const { data } = await axios.get(`http://${this.device.address}/api/dimmer`);
+      const { data } = await axios.get(`http://${this.device.address}/api/${this.device.type}`);
       const brightness = Math.round(data.level * 100);
       this.platform.log.info('Get Characteristic Brightness ->', brightness, ' from ', this.device.address);
 
@@ -146,7 +155,7 @@ export class LissabonPlatformAccessory {
     this.platform.log.info('Set Characteristic Temperature -> ', value, ' to ', this.device.address);
     try {
       await axios.put(
-        `http://${this.device.address}/api/dimmer`,
+        `http://${this.device.address}/api/${this.device.type}`,
         {
           temperature: 1000000.0 / (value as number),
         },
@@ -162,7 +171,7 @@ export class LissabonPlatformAccessory {
     // implement your own code to check if the device is on
 
     try {
-      const { data } = await axios.get(`http://${this.device.address}/api/dimmer`);
+      const { data } = await axios.get(`http://${this.device.address}/api/${this.device.type}`);
       const temperature = 1000000.0 / data.temperature;
       this.platform.log.info('Get Characteristic Temperature ->', temperature, ' from ', this.device.address);
 

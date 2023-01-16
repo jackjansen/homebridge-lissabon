@@ -29,6 +29,32 @@
                 "name" : {
                   "title" : "Name",
                   "type" : "string"
+                },
+                "type" : {
+                  "title" : "Type",
+                  "type" : "string",
+                  "oneOf": [
+                    {
+                      "title": "LED Strip",
+                      "enum": [
+                        "ledstrip"
+                      ]
+                    },
+                    {
+                      "title": "Dimmer",
+                      "enum": [
+                        "dimmer"
+                      ]
+                    }
+                  ]  
+                  },
+                "hasBrightness" : {
+                  "title" : "Supports brightness level",
+                  "type" : "boolean"
+                },
+                "hasTemperature" : {
+                  "title" : "Supports color temperature",
+                  "type" : "boolean"
                 }
               }
             }
