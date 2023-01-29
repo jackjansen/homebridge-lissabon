@@ -27,7 +27,8 @@
     "homebridge-plugin"
   ],
   "dependencies": {
-    "axios": "^1.2.2"
+    "axios": "^1.2.2",
+    "mdns": "^2.7.2"
   },
   "devDependencies": {
     "@types/node": "^16.10.9",

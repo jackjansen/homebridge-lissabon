@@ -11,12 +11,17 @@
         "required": true,
         "default": "LissabonLighting"
       },
+    
       "options" : {
         "title" : "Options",
         "type" : "object",
         "properties" : {
+          "discover" : {
+            "title" : "Auto-discover devices",
+            "type": "boolean"
+          },
           "devices" : {
-            "title" : "Lissabon Devices",
+            "title" : "Lissabon Devices (if not auto-discovering)",
             "type" : "array",
             "items" : {
               "title" : "Device",

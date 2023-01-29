@@ -3,7 +3,7 @@ import { API, DynamicPlatformPlugin, Logger, PlatformAccessory, PlatformConfig, 
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { LissabonPlatformAccessory } from './platformAccessory';
 import { LissabonConfig, LissabonOptions } from './config';
-
+import mdns from 'mdns';
 /**
  * HomebridgePlatform
  * This class is the main constructor for your plugin, this is where you should
@@ -34,11 +34,20 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
     // Dynamic Platform plugins should only register new accessories after this event was fired,
     // in order to ensure they weren't added to homebridge already. This event can also be used
     // to start discovery of new accessories.
-    this.api.on('didFinishLaunching', () => {
-      log.debug('Executed didFinishLaunching callback');
-      // run the method to discover / register your devices as accessories
-      this.discoverDevices();
-    });
+    if (this.options.discover) {
+      this.api.on('didFinishLaunching', () => {
+        log.debug('Executed didFinishLaunching callback, discover');
+        // run the method to discover / register your devices as accessories
+        this.discoverDevices();
+      });
+    } else {
+      this.api.on('didFinishLaunching', () => {
+        log.debug('Executed didFinishLaunching callback, register');
+        // run the method to discover / register your devices as accessories
+        this.registerDevices();
+      });
+    }
+
   }
 
   /**
@@ -58,9 +67,36 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
    * must not be registered again to prevent "duplicate UUID" errors.
    */
   discoverDevices() {
+    try {
+      const browser = mdns.createBrowser(mdns.tcp('http'));
+      browser.on('serviceUp', service => {
+        this.mdnsServiceUp(service);
+      });
+      browser.on('serviceDown', service => {
+        this.mdnsServiceDown(service);
+      });
+      browser.start();
+    } catch(ex) {
+      this.log.error('mdns.start exception: ', ex);
+    }
+  }
+
+  mdnsServiceUp(service) {
+    this.log.info('xxxjack serviceUp', service);
+  }
+
+  mdnsServiceDown(service) {
+    this.log.info('xxxjack serviceDown', service);
+  }
+
+  registerDevices() {
 
 
     // loop over the discovered devices and register each one if it has not already been registered
+    if (!this.options || !this.options.devices) {
+      this.log.warn('No devices configured');
+      return;
+    }
     for (const device of this.options.devices) {
 
       // generate a unique id for the accessory this should be generated from

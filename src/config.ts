@@ -9,6 +9,7 @@ export type LissabonDevice = {
   };
 
 export type LissabonOptions = {
+    discover : boolean;
     devices : LissabonDevice[];
   };
 
