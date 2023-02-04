@@ -9,7 +9,8 @@ export type LissabonDevice = {
   };
 
 export type LissabonOptions = {
-    discover : boolean;
+    discoverWifi : boolean;
+    discoverBle : boolean;
     devices : LissabonDevice[];
   };
 

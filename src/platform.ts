@@ -4,6 +4,8 @@ import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { LissabonPlatformAccessory } from './platformAccessory';
 import { LissabonConfig, LissabonOptions } from './config';
 import mdns from 'mdns';
+import noble from '@abandonware/noble';
+
 /**
  * HomebridgePlatform
  * This class is the main constructor for your plugin, this is where you should
@@ -34,12 +36,19 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
     // Dynamic Platform plugins should only register new accessories after this event was fired,
     // in order to ensure they weren't added to homebridge already. This event can also be used
     // to start discovery of new accessories.
-    if (this.options.discover) {
+    if (this.options.discoverWifi) {
       this.api.on('didFinishLaunching', () => {
-        log.debug('Executed didFinishLaunching callback, discover');
+        log.debug('Executed didFinishLaunching callback, mDNS-discover');
         // run the method to discover / register your devices as accessories
-        this.discoverDevices();
+        this.discoverWifiDevices();
       });
+    } else if (this.options.discoverBle) {
+      this.api.on('didFinishLaunching', () => {
+        log.debug('Executed didFinishLaunching callback, BLE-discover');
+        // run the method to discover / register your devices as accessories
+        this.discoverBleDevices();
+      });
+
     } else {
       this.api.on('didFinishLaunching', () => {
         log.debug('Executed didFinishLaunching callback, register');
@@ -66,7 +75,7 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
    * Accessories must only be registered once, previously created accessories
    * must not be registered again to prevent "duplicate UUID" errors.
    */
-  discoverDevices() {
+  discoverWifiDevices() {
     try {
       const browser = mdns.createBrowser(mdns.tcp('http'));
       browser.on('serviceUp', service => {
@@ -87,6 +96,18 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
 
   mdnsServiceDown(service) {
     this.log.info('xxxjack serviceDown', service);
+  }
+
+  discoverBleDevices() {
+    const wantedServiceUuids = [];
+    noble.startScanning(wantedServiceUuids);
+    noble.on('discover', peripheral => {
+      this.blePeripheralDiscovered(peripheral);
+    });
+  }
+
+  blePeripheralDiscovered(peripheral) {
+    this.log.info('xxxjack peripheralDiscovered ', peripheral);
   }
 
   registerDevices() {

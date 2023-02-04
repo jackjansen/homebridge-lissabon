@@ -16,8 +16,12 @@
         "title" : "Options",
         "type" : "object",
         "properties" : {
-          "discover" : {
-            "title" : "Auto-discover devices",
+          "discoverWifi" : {
+            "title" : "Auto-discover WiFi devices using mDNS",
+            "type": "boolean"
+          },
+          "discoverBle" : {
+            "title" : "Auto-discover Bluetooth LE devices",
             "type": "boolean"
           },
           "devices" : {

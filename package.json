@@ -27,6 +27,7 @@
     "homebridge-plugin"
   ],
   "dependencies": {
+    "@abandonware/noble": "^1.9.2-19",
     "axios": "^1.2.2",
     "mdns": "^2.7.2"
   },
