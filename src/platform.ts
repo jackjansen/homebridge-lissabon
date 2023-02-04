@@ -105,13 +105,16 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
 
   discoverBleDevices() {
     const wantedServiceUuids = [bleLissabonService];
-    noble.startScanning(wantedServiceUuids, false);
-    noble.on('discover', peripheral => {
-      this.blePeripheralDiscovered(peripheral);
+    noble.on('stateChange', async (state) => {
+      if (state === 'poweredOn') {
+        await noble.startScanningAsync(wantedServiceUuids, false);
+
+      }
     });
+    noble.on('discover', this.blePeripheralDiscovered.bind(this));
   }
 
-  blePeripheralDiscovered(peripheral) {
+  async blePeripheralDiscovered(peripheral) {
     if (!peripheral || !peripheral.advertisement) {
       return;
     }
@@ -123,6 +126,16 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
     }
     this.log.info('xxxjack peripheralDiscovered ', peripheral.address, ' name ', peripheral.advertisement.localName);
     this.log.info('   advertisement: ', peripheral.advertisement);
+    try {
+      await peripheral.connectAsync();
+      const wtdServices = [bleLissabonService];
+      const wtdCharacteristics = [bleLissabonCharacteristic_isOn, bleLissabonCharacteristic_brightness, bleLissabonCharacteristic_temperature];
+      const {services, characteristics} = await peripheral.discoverSomeServicesAndCharacteristicsAsync(wtdServices, wtdCharacteristics);
+      this.log.info('xxxjack services: ', services);
+      this.log.info('xxxjack characteristics: ', characteristics);
+    } catch(error) {
+      this.log.error('discoverServices error: ', error);
+    }
   }
 
   registerDevices() {
