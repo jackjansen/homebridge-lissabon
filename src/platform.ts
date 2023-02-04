@@ -6,6 +6,11 @@ import { LissabonConfig, LissabonOptions } from './config';
 import mdns from 'mdns';
 import noble from '@abandonware/noble';
 
+const bleLissabonService = '6b2f000138bc4204a5061d3546ad3688';
+const bleLissabonCharacteristic_isOn = '6b2f000238bc4204a5061d3546ad3688';
+const bleLissabonCharacteristic_identify = '6b2f000338bc4204a5061d3546ad3688';
+const bleLissabonCharacteristic_brightness = '6b2f000438bc4204a5061d3546ad3688';
+const bleLissabonCharacteristic_temperature = '6b2f005238bc4204a5061d3546ad3688';
 /**
  * HomebridgePlatform
  * This class is the main constructor for your plugin, this is where you should
@@ -99,15 +104,25 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
   }
 
   discoverBleDevices() {
-    const wantedServiceUuids = [];
-    noble.startScanning(wantedServiceUuids);
+    const wantedServiceUuids = [bleLissabonService];
+    noble.startScanning(wantedServiceUuids, false);
     noble.on('discover', peripheral => {
       this.blePeripheralDiscovered(peripheral);
     });
   }
 
   blePeripheralDiscovered(peripheral) {
-    this.log.info('xxxjack peripheralDiscovered ', peripheral);
+    if (!peripheral || !peripheral.advertisement) {
+      return;
+    }
+    if (!peripheral.advertisement.serviceUuids) {
+      return;
+    }
+    if (peripheral.advertisement.serviceUuids.indexOf(bleLissabonService) < 0) {
+      return;
+    }
+    this.log.info('xxxjack peripheralDiscovered ', peripheral.address, ' name ', peripheral.advertisement.localName);
+    this.log.info('   advertisement: ', peripheral.advertisement);
   }
 
   registerDevices() {
