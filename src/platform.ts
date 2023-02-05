@@ -1,16 +1,17 @@
 import { API, DynamicPlatformPlugin, Logger, PlatformAccessory, PlatformConfig, Service, Characteristic } from 'homebridge';
 
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
-import { LissabonPlatformAccessory } from './platformAccessory';
-import { LissabonConfig, LissabonOptions } from './config';
+import {
+  LissabonBlePlatformAccessory,
+  bleLissabonService,
+  bleLissabonCharacteristic_isOn,
+  bleLissabonCharacteristic_brightness,
+  bleLissabonCharacteristic_temperature,
+} from './platformBleAccessory';
+import { LissabonWiFiPlatformAccessory } from './platformWiFiAccessory';
+import { LissabonConfig, LissabonDevice, LissabonOptions } from './config';
 import mdns from 'mdns';
 import noble from '@abandonware/noble';
-
-const bleLissabonService = '6b2f000138bc4204a5061d3546ad3688';
-const bleLissabonCharacteristic_isOn = '6b2f000238bc4204a5061d3546ad3688';
-const bleLissabonCharacteristic_identify = '6b2f000338bc4204a5061d3546ad3688';
-const bleLissabonCharacteristic_brightness = '6b2f000438bc4204a5061d3546ad3688';
-const bleLissabonCharacteristic_temperature = '6b2f005238bc4204a5061d3546ad3688';
 /**
  * HomebridgePlatform
  * This class is the main constructor for your plugin, this is where you should
@@ -114,7 +115,7 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
     noble.on('discover', this.blePeripheralDiscovered.bind(this));
   }
 
-  async blePeripheralDiscovered(peripheral) {
+  async blePeripheralDiscovered(peripheral : noble.Peripheral) {
     if (!peripheral || !peripheral.advertisement) {
       return;
     }
@@ -127,70 +128,116 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
     this.log.info('xxxjack peripheralDiscovered ', peripheral.address, ' name ', peripheral.advertisement.localName);
     this.log.info('   advertisement: ', peripheral.advertisement);
     try {
+      //await noble.stopScanningAsync();
+      //this.log.info('xxxjack stopScanning done');
       await peripheral.connectAsync();
+      this.log.info('xxxjack connectAsync done');
       const wtdServices = [bleLissabonService];
-      const wtdCharacteristics = [bleLissabonCharacteristic_isOn, bleLissabonCharacteristic_brightness, bleLissabonCharacteristic_temperature];
+      const wtdCharacteristics = [
+        bleLissabonCharacteristic_isOn,
+        bleLissabonCharacteristic_brightness,
+        bleLissabonCharacteristic_temperature,
+      ];
       const {services, characteristics} = await peripheral.discoverSomeServicesAndCharacteristicsAsync(wtdServices, wtdCharacteristics);
-      this.log.info('xxxjack services: ', services);
-      this.log.info('xxxjack characteristics: ', characteristics);
+      //this.log.info('xxxjack services: ', services);
+      //this.log.info('xxxjack characteristics: ', characteristics);
+      let has_isOn = false;
+      let has_brightness = false;
+      let has_temperature = false;
+      for (const ch of characteristics) {
+        this.log.info('xxxjack characteristic: ', ch.uuid);
+        if (ch.uuid === bleLissabonCharacteristic_isOn) {
+          has_isOn = true;
+        }
+        if (ch.uuid === bleLissabonCharacteristic_brightness) {
+          has_brightness = true;
+        }
+        if (ch.uuid === bleLissabonCharacteristic_temperature) {
+          has_temperature = true;
+        }
+      }
+      if (!has_isOn) {
+        this.log.warn('lissabon BLE device without isOn characteristic ignored');
+      } else {
+        const device : LissabonDevice = {
+          address : peripheral.address,
+          name : peripheral.advertisement.localName,
+          type : 'unknown',
+          hasBrightness : has_brightness,
+          hasTemperature : has_temperature,
+          isBluetooth : true,
+        };
+        this.registerDevice(device, peripheral);
+      }
+      await peripheral.disconnectAsync();
+      this.log.info('xxxjack disconnectAsync done');
     } catch(error) {
       this.log.error('discoverServices error: ', error);
     }
   }
 
   registerDevices() {
-
-
     // loop over the discovered devices and register each one if it has not already been registered
     if (!this.options || !this.options.devices) {
       this.log.warn('No devices configured');
       return;
     }
     for (const device of this.options.devices) {
+      this.registerDevice(device, undefined);
+    }
+  }
 
-      // generate a unique id for the accessory this should be generated from
-      // something globally unique, but constant, for example, the device serial
-      // number or MAC address
-      const uuid = this.api.hap.uuid.generate(device.address);
+  registerDevice(device : LissabonDevice, noblePeripheral? : noble.Peripheral) {
+    // generate a unique id for the accessory this should be generated from
+    // something globally unique, but constant, for example, the device serial
+    // number or MAC address
+    const uuid = this.api.hap.uuid.generate(device.address);
 
-      // see if an accessory with the same uuid has already been registered and restored from
-      // the cached devices we stored in the `configureAccessory` method above
-      const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
+    // see if an accessory with the same uuid has already been registered and restored from
+    // the cached devices we stored in the `configureAccessory` method above
+    const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
 
-      if (existingAccessory) {
-        // the accessory already exists
-        this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
+    if (existingAccessory) {
+      // the accessory already exists
+      this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
 
-        // if you need to update the accessory.context then you should run `api.updatePlatformAccessories`. eg.:
-        // existingAccessory.context.device = device;
-        // this.api.updatePlatformAccessories([existingAccessory]);
+      // if you need to update the accessory.context then you should run `api.updatePlatformAccessories`. eg.:
+      // existingAccessory.context.device = device;
+      // this.api.updatePlatformAccessories([existingAccessory]);
 
-        // create the accessory handler for the restored accessory
-        // this is imported from `platformAccessory.ts`
-        new LissabonPlatformAccessory(this, existingAccessory);
-
-        // it is possible to remove platform accessories at any time using `api.unregisterPlatformAccessories`, eg.:
-        // remove platform accessories when no longer present
-        // this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
-        // this.log.info('Removing existing accessory from cache:', existingAccessory.displayName);
+      // create the accessory handler for the restored accessory
+      // this is imported from `platformAccessory.ts`
+      if (device.isBluetooth) {
+        new LissabonBlePlatformAccessory(this, existingAccessory, noblePeripheral as noble.Peripheral);
       } else {
-        // the accessory does not yet exist, so we need to create it
-        this.log.info('Adding new accessory:', device);
-
-        // create a new accessory
-        const accessory = new this.api.platformAccessory(device.address, uuid);
-
-        // store a copy of the device object in the `accessory.context`
-        // the `context` property can be used to store any data about the accessory you may need
-        accessory.context.device = device;
-
-        // create the accessory handler for the newly create accessory
-        // this is imported from `platformAccessory.ts`
-        new LissabonPlatformAccessory(this, accessory);
-
-        // link the accessory to your platform
-        this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+        new LissabonWiFiPlatformAccessory(this, existingAccessory);
       }
+
+      // it is possible to remove platform accessories at any time using `api.unregisterPlatformAccessories`, eg.:
+      // remove platform accessories when no longer present
+      // this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
+      // this.log.info('Removing existing accessory from cache:', existingAccessory.displayName);
+    } else {
+      // the accessory does not yet exist, so we need to create it
+      this.log.info('Adding new accessory:', device);
+
+      // create a new accessory
+      const accessory = new this.api.platformAccessory(device.address, uuid);
+
+      // store a copy of the device object in the `accessory.context`
+      // the `context` property can be used to store any data about the accessory you may need
+      accessory.context.device = device;
+
+      // create the accessory handler for the newly create accessory
+      // this is imported from `platformAccessory.ts`
+      if (device.isBluetooth) {
+        new LissabonBlePlatformAccessory(this, accessory, noblePeripheral as noble.Peripheral);
+      } else {
+        new LissabonWiFiPlatformAccessory(this, accessory);
+      }
+
+      // link the accessory to your platform
+      this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
     }
   }
 }

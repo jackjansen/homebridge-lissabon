@@ -6,6 +6,7 @@ export type LissabonDevice = {
     type : string;
     hasBrightness : boolean;
     hasTemperature : boolean;
+    isBluetooth : boolean;
   };
 
 export type LissabonOptions = {

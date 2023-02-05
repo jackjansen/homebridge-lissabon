@@ -32,7 +32,7 @@
               "type" : "object",
               "properties" : {
                 "address" : {
-                  "title" : "IP address or hostname",
+                  "title" : "IP address or hostname, or BLE address",
                   "type" : "string"
                 },
                 "name" : {
@@ -63,6 +63,10 @@
                 },
                 "hasTemperature" : {
                   "title" : "Supports color temperature",
+                  "type" : "boolean"
+                },
+                "isBluetooth" : {
+                  "title" : "Bluetooth device (otherwise WiFi device)",
                   "type" : "boolean"
                 }
               }

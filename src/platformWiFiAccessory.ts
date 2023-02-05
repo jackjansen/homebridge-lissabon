@@ -10,7 +10,7 @@ import axios from 'axios';
  * An instance of this class is created for each accessory your platform registers
  * Each accessory may expose multiple services of different service types.
  */
-export class LissabonPlatformAccessory {
+export class LissabonWiFiPlatformAccessory {
   private service: Service;
   private device : LissabonDevice;
 
