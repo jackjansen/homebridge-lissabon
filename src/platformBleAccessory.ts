@@ -106,7 +106,7 @@ export class LissabonBlePlatformAccessory {
       const buf : Buffer = Buffer.alloc(1);
       buf[0] = value as number;
       await ch.writeAsync(buf, false);
-      this.peripheral.disconnect();
+      await this.peripheral.disconnect();
     } catch(error) {
       this.platform.log.debug('BLE Error: ', error);
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
@@ -129,15 +129,19 @@ export class LissabonBlePlatformAccessory {
   async getOn(): Promise<CharacteristicValue> {
     // implement your own code to check if the device is on
     let isOn = false;
+    this.platform.log.debug('GetOn()');
     try {
       await this.connectPeripheral();
+      this.platform.log.debug('GetOn() connected');
       const ch = this.ble_isOn as noble.Characteristic;
       const buf = await ch.readAsync();
+      this.platform.log.debug('GetOn() read');
       if (buf.byteLength !== 1) {
         this.platform.log.warn(`Unexpected length ${buf.byteLength} for BLE read of isOn characteristic`);
       }
       isOn = buf[0] !== 0;
-      this.peripheral.disconnect();
+      await this.peripheral.disconnect();
+      this.platform.log.debug('GetOn() disconnected');
     } catch(error) {
       this.platform.log.debug('BLE Error: ', error);
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
@@ -161,7 +165,7 @@ export class LissabonBlePlatformAccessory {
       buf[0] = v & 0xff;
       buf[1] = v >> 8;
       await ch.writeAsync(buf, false);
-      this.peripheral.disconnect();
+      await this.peripheral.disconnect();
     } catch(error) {
       this.platform.log.debug('BLE Error: ', error);
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
@@ -179,7 +183,7 @@ export class LissabonBlePlatformAccessory {
         this.platform.log.warn(`Unexpected length ${buf.byteLength} for BLE read of isOn characteristic`);
       }
       brightness = buf[0] | (buf[1] << 8);
-      this.peripheral.disconnect();
+      await this.peripheral.disconnect();
     } catch(error) {
       this.platform.log.debug('BLE Error: ', error);
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
@@ -199,7 +203,7 @@ export class LissabonBlePlatformAccessory {
       buf[0] = v & 0xff;
       buf[1] = v >> 8;
       await ch.writeAsync(buf, false);
-      this.peripheral.disconnect();
+      await this.peripheral.disconnect();
     } catch(error) {
       this.platform.log.debug('BLE Error: ', error);
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
@@ -217,7 +221,7 @@ export class LissabonBlePlatformAccessory {
         this.platform.log.warn(`Unexpected length ${buf.byteLength} for BLE read of isOn characteristic`);
       }
       temperature = buf[0] | (buf[1] << 8);
-      this.peripheral.disconnect();
+      await this.peripheral.disconnect();
     } catch(error) {
       this.platform.log.debug('BLE Error: ', error);
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);

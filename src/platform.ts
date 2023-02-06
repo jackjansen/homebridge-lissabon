@@ -132,6 +132,7 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
       //this.log.info('xxxjack stopScanning done');
       await peripheral.connectAsync();
       this.log.info('xxxjack connectAsync done');
+      //this.log.info('xxx now peripheral: ', peripheral);
       const wtdServices = [bleLissabonService];
       const wtdCharacteristics = [
         bleLissabonCharacteristic_isOn,
@@ -159,10 +160,21 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
       if (!has_isOn) {
         this.log.warn('lissabon BLE device without isOn characteristic ignored');
       } else {
+        // We need to provide different addresses depending on whether it's Linux or MacOS.
+        // And we need to provide a default for the name.
+        let address = peripheral.address;
+        if (address === '') {
+          address = peripheral.uuid;
+        }
+        let name = peripheral.advertisement.localName;
+        if (name === '') {
+          name = address;
+        }
+        const type = has_temperature ? 'ledstrip' : 'dimmer';
         const device : LissabonDevice = {
-          address : peripheral.address,
-          name : peripheral.advertisement.localName,
-          type : 'unknown',
+          address : address,
+          name : name,
+          type : type,
           hasBrightness : has_brightness,
           hasTemperature : has_temperature,
           isBluetooth : true,
@@ -222,7 +234,7 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
       this.log.info('Adding new accessory:', device);
 
       // create a new accessory
-      const accessory = new this.api.platformAccessory(device.address, uuid);
+      const accessory = new this.api.platformAccessory(device.name, uuid);
 
       // store a copy of the device object in the `accessory.context`
       // the `context` property can be used to store any data about the accessory you may need
