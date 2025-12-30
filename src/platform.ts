@@ -10,7 +10,6 @@ import {
 } from './platformBleAccessory';
 import { LissabonWiFiPlatformAccessory } from './platformWiFiAccessory';
 import { LissabonConfig, LissabonDevice, LissabonOptions } from './config';
-import mdns from 'mdns';
 import noble from '@abandonware/noble';
 /**
  * HomebridgePlatform
@@ -44,9 +43,7 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
     // to start discovery of new accessories.
     if (this.options.discoverWifi) {
       this.api.on('didFinishLaunching', () => {
-        log.debug('Executed didFinishLaunching callback, mDNS-discover');
-        // run the method to discover / register your devices as accessories
-        this.discoverWifiDevices();
+        log.debug('Executed didFinishLaunching callback, but mDNS-discover no longer working');
       });
     } else if (this.options.discoverBle) {
       this.api.on('didFinishLaunching', () => {
@@ -82,18 +79,7 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
    * must not be registered again to prevent "duplicate UUID" errors.
    */
   discoverWifiDevices() {
-    try {
-      const browser = mdns.createBrowser(mdns.tcp('http'));
-      browser.on('serviceUp', service => {
-        this.mdnsServiceUp(service);
-      });
-      browser.on('serviceDown', service => {
-        this.mdnsServiceDown(service);
-      });
-      browser.start();
-    } catch(ex) {
-      this.log.error('mdns.start exception: ', ex);
-    }
+  
   }
 
   mdnsServiceUp(service) {
