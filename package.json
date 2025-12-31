@@ -27,7 +27,8 @@
     "homebridge-plugin"
   ],
   "dependencies": {
-    "@abandonware/noble": "^1.9.2-26",
+    "@abandonware/noble": "^1.9.2-19",
+    "@types/w3c-web-usb": "^1.0.6",
     "axios": "^1.13.2",
     "homebridge-config-ui-x": "^5.13.1"
   },
