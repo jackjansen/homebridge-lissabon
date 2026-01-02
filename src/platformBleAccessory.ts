@@ -20,7 +20,7 @@ export const bleLissabonCharacteristic_temperature = '6b2f005238bc4204a5061d3546
 export class LissabonBlePlatformAccessory {
   private service: Service;
   private device : LissabonDevice;
-  private peripheral : noble.Peripheral;
+  private peripheral? : noble.Peripheral;
 
   constructor(
     private readonly platform: LissabonHomebridgePlatform,
@@ -70,6 +70,10 @@ export class LissabonBlePlatformAccessory {
   }
 
   async connectPeripheral() {
+    if (this.peripheral === undefined) {
+      this.platform.log.error('Peripheral ' + this.device.address + ' not BLE-discovered yet');
+      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    }
     await this.peripheral.connectAsync();
     if (this.ble_isOn === undefined) {
       const { characteristics } = await this.peripheral.discoverSomeServicesAndCharacteristicsAsync(
@@ -98,7 +102,10 @@ export class LissabonBlePlatformAccessory {
    * These are sent when the user changes the state of an accessory, for example, turning on a Light bulb.
    */
   async setOn(value: CharacteristicValue) {
-
+    if (this.peripheral === undefined) {
+      this.platform.log.error('Peripheral ' + this.device.address + ' not BLE-discovered yet');
+      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    }
     this.platform.log.info('Set Characteristic On ->', value, ' to ', this.device.address);
     try {
       await this.connectPeripheral();
@@ -128,6 +135,10 @@ export class LissabonBlePlatformAccessory {
    */
   async getOn(): Promise<CharacteristicValue> {
     // implement your own code to check if the device is on
+    if (this.peripheral === undefined) {
+      this.platform.log.error('Peripheral ' + this.device.address + ' not BLE-discovered yet');
+      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    }
     let isOn = false;
     this.platform.log.debug('GetOn()');
     try {
@@ -155,6 +166,10 @@ export class LissabonBlePlatformAccessory {
    */
   async setBrightness(value: CharacteristicValue) {
     // implement your own code to set the brightness
+    if (this.peripheral === undefined) {
+      this.platform.log.error('Peripheral ' + this.device.address + ' not BLE-discovered yet');
+      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    }
 
     this.platform.log.info('Set Characteristic Brightness -> ', value, ' to ', this.device.address);
     try {
@@ -174,6 +189,10 @@ export class LissabonBlePlatformAccessory {
 
   async getBrightness(): Promise<CharacteristicValue> {
     // implement your own code to check if the device is on
+    if (this.peripheral === undefined) {
+      this.platform.log.error('Peripheral ' + this.device.address + ' not BLE-discovered yet');
+      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    }
     let brightness = 0;
     try {
       await this.connectPeripheral();
@@ -193,6 +212,10 @@ export class LissabonBlePlatformAccessory {
 
   async setTemperature(value: CharacteristicValue) {
     // implement your own code to set the brightness
+    if (this.peripheral === undefined) {
+      this.platform.log.error('Peripheral ' + this.device.address + ' not BLE-discovered yet');
+      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    }
 
     this.platform.log.info('Set Characteristic Temperature -> ', value, ' to ', this.device.address);
     try {
@@ -212,6 +235,10 @@ export class LissabonBlePlatformAccessory {
 
   async getTemperature(): Promise<CharacteristicValue> {
     // implement your own code to check if the device is on
+    if (this.peripheral === undefined) {
+      this.platform.log.error('Peripheral ' + this.device.address + ' not BLE-discovered yet');
+      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    }
     let temperature = 0;
     try {
       await this.connectPeripheral();

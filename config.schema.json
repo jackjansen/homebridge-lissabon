@@ -66,9 +66,12 @@
                   "type" : "boolean"
                 },
                 "isBluetooth" : {
-                  "title" : "Bluetooth device (otherwise WiFi device)",
+                  "title" : "Bluetooth device",
                   "type" : "boolean"
-                }
+                },
+                "isWiFi" : {
+                  "title" : "WiFi device",
+                  "type" : "boolean"
               }
             }
           }    
