@@ -87,16 +87,21 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
 
   discoverBleDevices() {
     const wantedServiceUuids = [bleLissabonService];
+    this.log.info('Waiting for poweron...');
     noble.on('stateChange', async (state) => {
       if (state === 'poweredOn') {
-        await noble.startScanningAsync(wantedServiceUuids, false);
-
-      }
+        this.log.info('Starting BLE scan for Lissabon devices...');
+        noble.startScanning(wantedServiceUuids, false);
+      } else {
+        this.log.info('Stopping BLE scan...');
+        await noble.stopScanningAsync(); 
+      }        
     });
     noble.on('discover', this.blePeripheralDiscovered.bind(this));
   }
 
   async blePeripheralDiscovered(peripheral : noble.Peripheral) {
+    this.log.info('xxxjack peripheral discovered: ', peripheral);
     if (!peripheral || !peripheral.advertisement) {
       return;
     }
@@ -106,7 +111,7 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
     if (peripheral.advertisement.serviceUuids.indexOf(bleLissabonService) < 0) {
       return;
     }
-    this.log.info('xxxjack peripheralDiscovered ', peripheral.address, ' name ', peripheral.advertisement.localName);
+    this.log.info('xxxjack peripheralDiscovered addr=', peripheral.address, ', name =', peripheral.advertisement.localName);
     this.log.info('   advertisement: ', peripheral.advertisement);
     try {
       //await noble.stopScanningAsync();

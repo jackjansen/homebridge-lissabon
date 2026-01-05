@@ -21,9 +21,6 @@ export class LissabonBlePlatformAccessory {
   private service: Service;
   private device : LissabonDevice;
   private noblePeripheral? : noble.Peripheral;
-  private noble_isOn? : noble.Characteristic;
-  private noble_brightness? : noble.Characteristic;
-  private noble_temperature? : noble.Characteristic;
 
   constructor(
     private readonly platform: LissabonHomebridgePlatform,
@@ -75,76 +72,52 @@ export class LissabonBlePlatformAccessory {
       this.platform.log.error('Peripheral ' + this.device.address + ' not BLE-discovered yet');
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
     }
-    const mustDisconnect : boolean = await this.connectPeripheral();
-    if (mustDisconnect) {
-      await this.noblePeripheral.disconnectAsync();
-    }
+   
     return true;
   }
 
-  async connectPeripheral() : Promise<boolean> {
+  async connectPeripheral(char : string) : Promise<noble.Characteristic> {
     if (this.noblePeripheral === undefined) {
       this.platform.log.error('Peripheral ' + this.device.address + ' not BLE-discovered yet');
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
     }
-    if (this.noblePeripheral.state === 'connected') {
-      return false;
-    }
     this.platform.log.debug('Connecting to peripheral ' + this.device.address, 'state=', this.noblePeripheral.state);
     await this.noblePeripheral.connectAsync();
-    // First time we need to discover the characteristics
-    if (this.noble_isOn === undefined) {
-      const { characteristics } = await this.noblePeripheral.discoverSomeServicesAndCharacteristicsAsync(
+    const { characteristics } = await this.noblePeripheral.discoverSomeServicesAndCharacteristicsAsync(
         [bleLissabonService],
-        [
-          bleLissabonCharacteristic_isOn,
-          bleLissabonCharacteristic_brightness,
-          bleLissabonCharacteristic_temperature,
-        ]);
-      for(const ch of characteristics) {
-        if (ch.uuid === bleLissabonCharacteristic_isOn) {
-          this.noble_isOn = ch;
-        }
-        if (ch.uuid === bleLissabonCharacteristic_brightness) {
-          this.noble_brightness = ch;
-        }
-        if (ch.uuid === bleLissabonCharacteristic_temperature) {
-          this.noble_temperature = ch;
-        }
-      }
+        [char]);
+    if (characteristics.length === 0) {
+      this.platform.log.error('Characteristic ' + char + ' not found for peripheral ' + this.device.address);
+      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
     }
-    return true;
+    return characteristics[0];
   }
 
-  async writePeripheralCharacteristic(ch : noble.Characteristic, buf: Buffer) : Promise<void> {
+  async writePeripheralCharacteristic(lissabonCh : string, buf: Buffer) : Promise<void> {
     if (this.noblePeripheral === undefined) {
       this.platform.log.error('Peripheral ' + this.device.address + ' not BLE-discovered yet');
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
     }
     try {
-      const mustDisconnect : boolean = await this.connectPeripheral();
+      const ch = await this.connectPeripheral(lissabonCh);
       await ch.writeAsync(buf, false);
-      if (mustDisconnect) {
-        await this.noblePeripheral.disconnectAsync();
-      }
+      await this.noblePeripheral.disconnectAsync();
     } catch(error) {
       this.platform.log.debug('BLE Error: ', error, 'state=', this.noblePeripheral.state);
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
     }
   }
 
-  async ReadPeripheralCharacteristic(ch : noble.Characteristic) : Promise<Buffer> {
+  async ReadPeripheralCharacteristic(lissabonCh : string) : Promise<Buffer> {
     if (this.noblePeripheral === undefined) {
       this.platform.log.error('Peripheral ' + this.device.address + ' not BLE-discovered yet');
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
     }
     let buf : Buffer;
     try {
-      const mustDisconnect : boolean = await this.connectPeripheral();
+      const ch = await this.connectPeripheral(lissabonCh);
       buf = await ch.readAsync();
-      if (mustDisconnect) {
-        await this.noblePeripheral.disconnectAsync();
-      }
+      await this.noblePeripheral.disconnectAsync();
     } catch(error) {
       this.platform.log.debug('BLE Error: ', error, 'state=', this.noblePeripheral.state);
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
@@ -159,10 +132,9 @@ export class LissabonBlePlatformAccessory {
   async setOn(value: CharacteristicValue) {
     await this.initDevice();
     this.platform.log.info('SetOn() ', value, ' to ', this.device.address);
-    const ch = this.noble_isOn as noble.Characteristic;
     const buf : Buffer = Buffer.alloc(1);
     buf[0] = value as number;
-    await this.writePeripheralCharacteristic(ch, buf);
+    await this.writePeripheralCharacteristic(bleLissabonCharacteristic_isOn, buf);
   }
 
   /**
@@ -182,8 +154,7 @@ export class LissabonBlePlatformAccessory {
     await this.initDevice();
     let isOn = false;
     this.platform.log.debug('GetOn()');
-    const ch = this.noble_isOn as noble.Characteristic;
-    const buf = await this.ReadPeripheralCharacteristic(ch);
+    const buf = await this.ReadPeripheralCharacteristic(bleLissabonCharacteristic_isOn);
     if (buf.byteLength !== 1) {
       this.platform.log.warn(`Unexpected length ${buf.byteLength} for BLE read of isOn characteristic`);
     }
@@ -199,22 +170,20 @@ export class LissabonBlePlatformAccessory {
   async setBrightness(value: CharacteristicValue) {
     await this.initDevice();
     this.platform.log.info('SetBrightness() ', value, ' to ', this.device.address);
-    const ch = this.noble_brightness as noble.Characteristic;
     const buf : Buffer = Buffer.alloc(2);
     const v = value as number;
     buf[0] = v & 0xff;
     buf[1] = v >> 8;
-    await this.writePeripheralCharacteristic(ch, buf);
+    await this.writePeripheralCharacteristic(bleLissabonCharacteristic_brightness, buf);
   }
 
   async getBrightness(): Promise<CharacteristicValue> {
     // implement your own code to check if the device is on
     let brightness = 0;
-    this.platform.log.debug('GetOn()');
-    const ch = this.noble_brightness as noble.Characteristic;
-    const buf = await ch.readAsync();
+    this.platform.log.debug('GetBrightness()');
+    const buf = await this.ReadPeripheralCharacteristic(bleLissabonCharacteristic_brightness);
     if (buf.byteLength !== 2) {
-      this.platform.log.warn(`Unexpected length ${buf.byteLength} for BLE read of isOn characteristic`);
+      this.platform.log.warn(`Unexpected length ${buf.byteLength} for BLE read of brightness characteristic`);
     }
     brightness = buf[0] | (buf[1] << 8);
     return brightness;
@@ -222,20 +191,18 @@ export class LissabonBlePlatformAccessory {
 
   async setTemperature(value: CharacteristicValue) {
     this.platform.log.info('Set Characteristic Temperature ->', value, ' to ', this.device.address);
-    const ch = this.noble_temperature as noble.Characteristic;
     const buf : Buffer = Buffer.alloc(2);
     const v = value as number;
     buf[0] = v & 0xff;
     buf[1] = v >> 8;
-    await this.writePeripheralCharacteristic(ch, buf);  
+    await this.writePeripheralCharacteristic(bleLissabonCharacteristic_temperature, buf);  
   }
 
   async getTemperature(): Promise<CharacteristicValue> {
     // implement your own code to check if the device is on
     let temperature = 0;
     this.platform.log.debug('GetTemperature()');
-    const ch = this.noble_temperature as noble.Characteristic;
-    const buf = await ch.readAsync();
+    const buf = await this.ReadPeripheralCharacteristic(bleLissabonCharacteristic_temperature);
     if (buf.byteLength !== 2) {
       this.platform.log.warn(`Unexpected length ${buf.byteLength} for BLE read of temperature characteristic`);
     }
