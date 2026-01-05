@@ -29,10 +29,12 @@
   ],
   "dependencies": {
     "@abandonware/noble": "^1.9.2-23",
-    "axios": "^1.13.2"
+    "axios": "^1.13.2",
+    "mdns": "^2.7.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@types/mdns": "^0.0.38",
     "@types/node": "^24.10.1",
     "eslint": "^9.39.1",
     "homebridge": "^1.8.0",

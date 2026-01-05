@@ -11,6 +11,7 @@ import {
 import { LissabonWiFiPlatformAccessory } from './platformWiFiAccessory';
 import { LissabonConfig, LissabonDevice, LissabonOptions } from './config';
 import noble from '@abandonware/noble';
+import mdns from 'mdns';
 /**
  * HomebridgePlatform
  * This class is the main constructor for your plugin, this is where you should
@@ -44,13 +45,13 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
     // in order to ensure they weren't added to homebridge already. This event can also be used
     // to start discovery of new accessories.
     this.api.on('didFinishLaunching', () => {
-        this.registerDevices();
-        if (this.options.discoverWifi) {
-          this.discoverWifiDevices();
-        }
-        if (this.options.discoverBle) {
-          this.discoverBleDevices();
-        }
+      this.registerDevices();
+      if (this.options.discoverWifi) {
+        this.discoverWifiDevices();
+      }
+      if (this.options.discoverBle) {
+        this.discoverBleDevices();
+      }
     });
 
   }
@@ -72,9 +73,49 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
    * must not be registered again to prevent "duplicate UUID" errors.
    */
   discoverWifiDevices() {
-  
+    const browser = mdns.createBrowser(mdns.tcp('_iotsa'));
+    browser.on('serviceUp', (service: mdns.Service) => {
+      this.mdnsServiceUp(service);
+    });
+    browser.on('serviceDown', (service: mdns.Service) => {
+      this.mdnsServiceDown(service);
+    });
+    browser.start();
+    this.log.info('mDNS: Started browsing for services.');
   }
 
+  mdnsServiceUp(service : mdns.Service) {
+    if (service.txtRecord === undefined) {
+      this.log.debug('mDNS: service ' + service.name + ' has no txtRecord, ignoring');
+      return;
+    }
+    if (service.txtRecord.dimmer === undefined) {
+      this.log.debug('mDNS: service ' + service.name + ' has no dimmer service, ignoring');
+      return;
+    }
+    this.log.debug('mDNS: service ' + service.name + ' should be a Lissabon device: ', service);
+    let address = service.addresses[0];
+    let name = service.name;
+    if (name === '' || name === undefined ) {
+      name = address;
+    } else {
+      address = name + '.local.';
+    }
+    const type =  'dimmer';
+    const device : LissabonDevice = {
+      address : address,
+      name : name,
+      type : type,
+      hasBrightness : false,
+      hasTemperature : false,
+      isBluetooth : false,
+    };
+    this.registerDevice(device, undefined);
+  }
+
+  mdnsServiceDown(service : mdns.Service) {
+    this.log.debug('mDNS: service down: ', service);
+  }
 
   discoverBleDevices() {
     const wantedServiceUuids = [bleLissabonService];
@@ -116,7 +157,7 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
         bleLissabonCharacteristic_brightness,
         bleLissabonCharacteristic_temperature,
       ];
-      const {services, characteristics} = await peripheral.discoverSomeServicesAndCharacteristicsAsync(wtdServices, wtdCharacteristics);
+      const { services, characteristics } = await peripheral.discoverSomeServicesAndCharacteristicsAsync(wtdServices, wtdCharacteristics);
       //this.log.info('xxxjack services: ', services);
       //this.log.info('xxxjack characteristics: ', characteristics);
       let has_isOn = false;
