@@ -69,12 +69,17 @@ export class LissabonBlePlatformAccessory {
     }
   }
 
-  async connectPeripheral() {
+  async connectPeripheral() : Promise<boolean> {
     if (this.peripheral === undefined) {
       this.platform.log.error('Peripheral ' + this.device.address + ' not BLE-discovered yet');
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
     }
+    if (this.peripheral.state === 'connected') {
+      return false;
+    }
+    this.platform.log.debug('Connecting to peripheral ' + this.device.address, 'state=', this.peripheral.state);
     await this.peripheral.connectAsync();
+    // First time we need to discover the characteristics
     if (this.ble_isOn === undefined) {
       const { characteristics } = await this.peripheral.discoverSomeServicesAndCharacteristicsAsync(
         [bleLissabonService],
@@ -95,6 +100,7 @@ export class LissabonBlePlatformAccessory {
         }
       }
     }
+    return true;
   }
 
   /**
@@ -108,14 +114,19 @@ export class LissabonBlePlatformAccessory {
     }
     this.platform.log.info('Set Characteristic On ->', value, ' to ', this.device.address);
     try {
-      await this.connectPeripheral();
+      const mustDisconnect : boolean = await this.connectPeripheral();
+      this.platform.log.debug('setOn() connected');
       const ch = this.ble_isOn as noble.Characteristic;
       const buf : Buffer = Buffer.alloc(1);
       buf[0] = value as number;
+      this.platform.log.debug('setOn() writing value=', buf[0]);
       await ch.writeAsync(buf, false);
-      await this.peripheral.disconnect();
+      if (mustDisconnect) {
+        await this.peripheral.disconnectAsync();
+      }
+      this.platform.log.debug('setOn() disconnected');
     } catch(error) {
-      this.platform.log.debug('BLE Error: ', error);
+      this.platform.log.debug('BLE Error: ', error, 'state=', this.peripheral.state);
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
     }
   }
@@ -142,19 +153,23 @@ export class LissabonBlePlatformAccessory {
     let isOn = false;
     this.platform.log.debug('GetOn()');
     try {
-      await this.connectPeripheral();
+      const mustDisconnect : boolean = await this.connectPeripheral();
       this.platform.log.debug('GetOn() connected');
       const ch = this.ble_isOn as noble.Characteristic;
+      this.platform.log.debug('GetOn() reading characteristic');
       const buf = await ch.readAsync();
-      this.platform.log.debug('GetOn() read');
+      this.platform.log.debug('GetOn() read returned');
       if (buf.byteLength !== 1) {
         this.platform.log.warn(`Unexpected length ${buf.byteLength} for BLE read of isOn characteristic`);
       }
       isOn = buf[0] !== 0;
-      await this.peripheral.disconnect();
+      this.platform.log.debug('GetOn() isOn=', isOn);
+      if (mustDisconnect) {
+        await this.peripheral.disconnectAsync();
+      }
       this.platform.log.debug('GetOn() disconnected');
     } catch(error) {
-      this.platform.log.debug('BLE Error: ', error);
+      this.platform.log.debug('BLE Error: ', error, 'state=', this.peripheral.state);
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
     }
     return isOn;
@@ -180,9 +195,9 @@ export class LissabonBlePlatformAccessory {
       buf[0] = v & 0xff;
       buf[1] = v >> 8;
       await ch.writeAsync(buf, false);
-      await this.peripheral.disconnect();
+      await this.peripheral.disconnectAsync();
     } catch(error) {
-      this.platform.log.debug('BLE Error: ', error);
+      this.platform.log.debug('BLE Error: ', error, 'state=', this.peripheral.state);
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
     }
   }
@@ -202,9 +217,9 @@ export class LissabonBlePlatformAccessory {
         this.platform.log.warn(`Unexpected length ${buf.byteLength} for BLE read of isOn characteristic`);
       }
       brightness = buf[0] | (buf[1] << 8);
-      await this.peripheral.disconnect();
+      await this.peripheral.disconnectAsync();
     } catch(error) {
-      this.platform.log.debug('BLE Error: ', error);
+      this.platform.log.debug('BLE Error: ', error, 'state=', this.peripheral.state);
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
     }
     return brightness;
@@ -226,9 +241,9 @@ export class LissabonBlePlatformAccessory {
       buf[0] = v & 0xff;
       buf[1] = v >> 8;
       await ch.writeAsync(buf, false);
-      await this.peripheral.disconnect();
+      await this.peripheral.disconnectAsync();
     } catch(error) {
-      this.platform.log.debug('BLE Error: ', error);
+      this.platform.log.debug('BLE Error: ', error, 'state=', this.peripheral.state);
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
     }
   }
@@ -248,9 +263,9 @@ export class LissabonBlePlatformAccessory {
         this.platform.log.warn(`Unexpected length ${buf.byteLength} for BLE read of isOn characteristic`);
       }
       temperature = buf[0] | (buf[1] << 8);
-      await this.peripheral.disconnect();
+      await this.peripheral.disconnectAsync();
     } catch(error) {
-      this.platform.log.debug('BLE Error: ', error);
+      this.platform.log.debug('BLE Error: ', error, 'state=', this.peripheral.state);
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
     }
     return temperature;
