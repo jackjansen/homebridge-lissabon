@@ -43,24 +43,15 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
     // Dynamic Platform plugins should only register new accessories after this event was fired,
     // in order to ensure they weren't added to homebridge already. This event can also be used
     // to start discovery of new accessories.
-    if (this.options.discoverWifi) {
-      this.api.on('didFinishLaunching', () => {
-        log.debug('Executed didFinishLaunching callback, but mDNS-discover no longer working');
-      });
-    } else if (this.options.discoverBle) {
-      this.api.on('didFinishLaunching', () => {
-        log.debug('Executed didFinishLaunching callback, BLE-discover');
-        // run the method to discover / register your devices as accessories
-        this.discoverBleDevices();
-      });
-
-    } else {
-      this.api.on('didFinishLaunching', () => {
-        log.debug('Executed didFinishLaunching callback, register');
-        // run the method to discover / register your devices as accessories
+    this.api.on('didFinishLaunching', () => {
         this.registerDevices();
-      });
-    }
+        if (this.options.discoverWifi) {
+          this.discoverWifiDevices();
+        }
+        if (this.options.discoverBle) {
+          this.discoverBleDevices();
+        }
+    });
 
   }
 
@@ -87,13 +78,13 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
 
   discoverBleDevices() {
     const wantedServiceUuids = [bleLissabonService];
-    this.log.info('Waiting for poweron...');
+    this.log.info('BLE: Waiting for poweron...');
     noble.on('stateChange', async (state) => {
       if (state === 'poweredOn') {
-        this.log.info('Starting BLE scan for Lissabon devices...');
+        this.log.info('BLE: Starting BLE scan for Lissabon devices...');
         noble.startScanning(wantedServiceUuids, false);
       } else {
-        this.log.info('Stopping BLE scan...');
+        this.log.info('BLE: Stopping BLE scan...');
         await noble.stopScanningAsync(); 
       }        
     });
@@ -101,7 +92,7 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
   }
 
   async blePeripheralDiscovered(peripheral : noble.Peripheral) {
-    this.log.info('xxxjack peripheral discovered: ', peripheral);
+    this.log.debug('BLE: peripheral discovered: ', peripheral);
     if (!peripheral || !peripheral.advertisement) {
       return;
     }
@@ -111,13 +102,13 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
     if (peripheral.advertisement.serviceUuids.indexOf(bleLissabonService) < 0) {
       return;
     }
-    this.log.info('xxxjack peripheralDiscovered addr=', peripheral.address, ', name =', peripheral.advertisement.localName);
-    this.log.info('   advertisement: ', peripheral.advertisement);
+    this.log.debug('BLE: peripheralDiscovered addr=', peripheral.address, ', name =', peripheral.advertisement.localName);
+    this.log.debug('BLE: advertisement: ', peripheral.advertisement);
     try {
       //await noble.stopScanningAsync();
       //this.log.info('xxxjack stopScanning done');
       await peripheral.connectAsync();
-      this.log.info('xxxjack connectAsync done');
+      this.log.debug('BLE: connectAsync done');
       //this.log.info('xxx now peripheral: ', peripheral);
       const wtdServices = [bleLissabonService];
       const wtdCharacteristics = [
@@ -132,7 +123,7 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
       let has_brightness = false;
       let has_temperature = false;
       for (const ch of characteristics) {
-        this.log.info('xxxjack characteristic: ', ch.uuid);
+        this.log.debug('BLE: characteristic: ', ch.uuid);
         if (ch.uuid === bleLissabonCharacteristic_isOn) {
           has_isOn = true;
         }
@@ -144,7 +135,7 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
         }
       }
       if (!has_isOn) {
-        this.log.warn('lissabon BLE device without isOn characteristic ignored');
+        this.log.warn('BLE: BLE device without isOn characteristic ignored');
       } else {
         // We need to provide different addresses depending on whether it's Linux or MacOS.
         // And we need to provide a default for the name.
@@ -168,9 +159,9 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
         this.registerDevice(device, peripheral);
       }
       await peripheral.disconnectAsync();
-      this.log.info('xxxjack disconnectAsync done');
+      this.log.debug('BLE: disconnectAsync done');
     } catch(error) {
-      this.log.error('discoverServices error: ', error);
+      this.log.error('BLE: discoverServices error: ', error);
     }
   }
 
