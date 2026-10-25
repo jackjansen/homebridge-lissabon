@@ -1,9 +1,7 @@
-import { Service, PlatformAccessory, CharacteristicValue } from 'homebridge';
+import { PlatformAccessory } from 'homebridge';
 
 import { LissabonHomebridgePlatform } from './platform';
-
-import { LissabonDevice } from './config';
-import { LampLog } from './lampLog';
+import { LissabonLampAccessory, LampValues, LampValueName, kelvinToMireds, miredsToKelvin } from './lampAccessory';
 
 import { Peripheral, Characteristic as NobleCharacteristic } from '@stoprocent/noble';
 
@@ -15,215 +13,103 @@ export const bleLissabonCharacteristic_temperature = '6b2f000538bc4204a5061d3546
 
 // The firmware's brightness is uint16 (0..65535), HomeKit's is a percentage
 const bleBrightnessMax = 65535;
-// The firmware's temperature is in Kelvin, HomeKit's in mireds, with this range
-const homekitMiredsMin = 140;
-const homekitMiredsMax = 500;
+
+const characteristicFor : Record<LampValueName, string> = {
+  isOn: bleLissabonCharacteristic_isOn,
+  brightness: bleLissabonCharacteristic_brightness,
+  temperature: bleLissabonCharacteristic_temperature,
+};
 
 /**
- * Platform Accessory
- * An instance of this class is created for each accessory your platform registers
- * Each accessory may expose multiple services of different service types.
+ * A lamp reached over BLE, through the lissabon GATT service. Every read or write is a separate
+ * connection: connect, discover, read or write, disconnect.
  */
-export class LissabonBlePlatformAccessory {
-  private service: Service;
-  private device : LissabonDevice;
-  private noblePeripheral? : Peripheral;
-  private lampLog : LampLog;
-  private cached_isOn = false;
-  private cached_brightness = 0;
-  private cached_temperature = 250; // mireds, the firmware's default of 4000K
-
+export class LissabonBlePlatformAccessory extends LissabonLampAccessory {
   constructor(
-    private readonly platform: LissabonHomebridgePlatform,
-    private readonly accessory: PlatformAccessory,
-    private readonly _noblePeripheral : Peripheral,
+    platform: LissabonHomebridgePlatform,
+    accessory: PlatformAccessory,
+    private readonly noblePeripheral : Peripheral | undefined,
+    pollIntervalSeconds : number,
   ) {
-    this.device = accessory.context.device;
-    this.noblePeripheral = _noblePeripheral;
-    this.lampLog = new LampLog(platform.log, this.device.name, 'ble');
-    // set accessory information
-    this.accessory.getService(this.platform.Service.AccessoryInformation)!
-      .setCharacteristic(this.platform.Characteristic.Manufacturer, 'jackjansen')
-      .setCharacteristic(this.platform.Characteristic.Model, this.device.type)
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, this.device.hostname);
-
-    // get the LightBulb service if it exists, otherwise create a new LightBulb service
-    // you can create multiple services for each accessory
-    this.service = this.accessory.getService(this.platform.Service.Lightbulb) || this.accessory.addService(this.platform.Service.Lightbulb);
-
-    // set the service name, this is what is displayed as the default name on the Home app
-    // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
-    this.service.setCharacteristic(this.platform.Characteristic.Name, this.device.name);
-
-    // each service must implement at-minimum the "required characteristics" for the given service type
-    // see https://developers.homebridge.io/#/service/Lightbulb
-
-    // register handlers for the On/Off Characteristic
-    this.service.getCharacteristic(this.platform.Characteristic.On)
-      .onSet(this.setOn.bind(this))                // SET - bind to the `setOn` method below
-      .onGet(this.getOn.bind(this));               // GET - bind to the `getOn` method below
-
-    if(this.device.hasBrightness) {
-      // register handlers for the Brightness Characteristic
-      this.service.getCharacteristic(this.platform.Characteristic.Brightness)
-        .onSet(this.setBrightness.bind(this))       // SET - bind to the 'setBrightness` method below
-        .onGet(this.getBrightness.bind(this));
-    }
-
-    if(this.device.hasTemperature) {
-      // register handlers for the ColorTemperature Characteristic
-      this.service.getCharacteristic(this.platform.Characteristic.ColorTemperature)
-        .onSet(this.setTemperature.bind(this))       // SET - bind to the 'setBrightness` method below
-        .onGet(this.getTemperature.bind(this));
-    }
+    super(platform, accessory, 'ble', pollIntervalSeconds);
   }
 
-  // Why the peripheral can't be used now, or undefined if it can
-  unusableReason() : string | undefined {
-    if (this.noblePeripheral === undefined) {
+  // Connect, find the wanted characteristics, run body, and always disconnect
+  private async withCharacteristics<T>(uuids : string[], body : (chars : NobleCharacteristic[]) => Promise<T>) : Promise<T> {
+    const peripheral = this.noblePeripheral;
+    if (peripheral === undefined) {
       // xxxjack should re-discover.
-      return 'not BLE-discovered yet';
+      throw new Error('not BLE-discovered yet');
     }
-    if (this.noblePeripheral.state !== 'disconnected') {
-      return 'peripheral busy (' + this.noblePeripheral.state + ')';
+    if (peripheral.state !== 'disconnected') {
+      throw new Error('peripheral busy (' + peripheral.state + ')');
     }
-    return undefined;
-  }
-
-  async connectPeripheral(char : string) : Promise<NobleCharacteristic> {
     const t0 = Date.now();
-    await this.noblePeripheral!.connectAsync();
+    await peripheral.connectAsync();
     this.lampLog.debug('connected', t0);
-    const { characteristics } = await this.noblePeripheral!.discoverSomeServicesAndCharacteristicsAsync(
-      [bleLissabonService],
-      [char]);
-    if (characteristics.length === 0) {
-      throw new Error('characteristic ' + char + ' not found');
-    }
-    return characteristics[0];
-  }
-
-  async disconnectPeripheral() {
-    const t0 = Date.now();
-    await this.noblePeripheral!.disconnectAsync();
-    this.lampLog.debug('disconnected', t0);
-  }
-
-  async writePeripheralCharacteristic(what : string, lissabonCh : string, buf: Buffer, value : CharacteristicValue) {
-    const t0 = Date.now();
-    const reason = this.unusableReason();
-    if (reason !== undefined) {
-      // Report the failure, so HomeKit doesn't assume the write happened
-      this.lampLog.failed('set', what, reason);
-      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
-    }
     try {
-      const ch = await this.connectPeripheral(lissabonCh);
-      await ch.writeAsync(buf, false);
-      await this.disconnectPeripheral();
-    } catch(error) {
-      this.lampLog.failed('set', what, error, t0);
-      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+      const { characteristics } = await peripheral.discoverSomeServicesAndCharacteristicsAsync([bleLissabonService], uuids);
+      return await body(characteristics);
+    } finally {
+      const t1 = Date.now();
+      await peripheral.disconnectAsync();
+      this.lampLog.debug('disconnected', t1);
     }
-    this.lampLog.set(what, value, t0);
   }
 
-  // Returns undefined if the peripheral is busy: the caller then answers from its cached value
-  async readPeripheralCharacteristic(what : string, lissabonCh : string, expectedLength : number) : Promise<Buffer|undefined> {
-    const t0 = Date.now();
-    const reason = this.unusableReason();
-    if (reason !== undefined) {
-      if (this.noblePeripheral === undefined) {
-        this.lampLog.failed('get', what, reason);
-        throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
-      }
-      this.lampLog.debug('get ' + what + ': ' + reason + ', using cached value');
-      return undefined;
+  protected async readValues() : Promise<LampValues> {
+    const wanted = [bleLissabonCharacteristic_isOn];
+    if (this.device.hasBrightness) {
+      wanted.push(bleLissabonCharacteristic_brightness);
     }
+    if (this.device.hasTemperature) {
+      wanted.push(bleLissabonCharacteristic_temperature);
+    }
+    return this.withCharacteristics(wanted, async chars => {
+      const values : LampValues = {};
+      for (const ch of chars) {
+        const buf = await ch.readAsync();
+        if (ch.uuid === bleLissabonCharacteristic_isOn && buf.length >= 1) {
+          values.isOn = buf[0] !== 0;
+        } else if (ch.uuid === bleLissabonCharacteristic_brightness && buf.length >= 2) {
+          values.brightness = Math.round(buf.readUInt16LE(0) * 100 / bleBrightnessMax);
+        } else if (ch.uuid === bleLissabonCharacteristic_temperature && buf.length >= 2) {
+          const kelvin = buf.readUInt16LE(0);
+          if (kelvin > 0) {
+            values.temperature = kelvinToMireds(kelvin);
+          }
+        } else {
+          this.lampLog.info('get: unexpected length ' + buf.length + ' for characteristic ' + ch.uuid);
+        }
+      }
+      if (values.isOn === undefined) {
+        throw new Error('isOn characteristic not found');
+      }
+      return values;
+    });
+  }
+
+  protected async writeValue(what : LampValueName, value : number | boolean) {
     let buf : Buffer;
-    try {
-      const ch = await this.connectPeripheral(lissabonCh);
-      buf = await ch.readAsync();
-      await this.disconnectPeripheral();
-    } catch(error) {
-      this.lampLog.failed('get', what, error, t0);
-      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    switch (what) {
+    case 'isOn':
+      buf = Buffer.alloc(1);
+      buf[0] = value ? 1 : 0;
+      break;
+    case 'brightness':
+      buf = Buffer.alloc(2);
+      buf.writeUInt16LE(Math.round((value as number) * bleBrightnessMax / 100));
+      break;
+    case 'temperature':
+      buf = Buffer.alloc(2);
+      buf.writeUInt16LE(miredsToKelvin(value as number));
+      break;
     }
-    if (buf.byteLength !== expectedLength) {
-      this.lampLog.info('get ' + what + ': unexpected length ' + buf.byteLength + ', expected ' + expectedLength);
-    }
-    return buf;
-  }
-
-  /**
-   * Handle "SET" requests from HomeKit
-   * These are sent when the user changes the state of an accessory, for example, turning on a Light bulb.
-   */
-  async setOn(value: CharacteristicValue) {
-    const buf : Buffer = Buffer.alloc(1);
-    buf[0] = value ? 1 : 0;
-    await this.writePeripheralCharacteristic('On', bleLissabonCharacteristic_isOn, buf, value);
-  }
-
-  /**
-   * Handle the "GET" requests from HomeKit
-   * These are sent when HomeKit wants to know the current state of the accessory, for example, checking if a Light bulb is on.
-   *
-   * GET requests should return as fast as possbile. A long delay here will result in
-   * HomeKit being unresponsive and a bad user experience in general.
-   *
-   * If your device takes time to respond you should update the status of your device
-   * asynchronously instead using the `updateCharacteristic` method instead.
-
-   * @example
-   * this.service.updateCharacteristic(this.platform.Characteristic.On, true)
-   */
-  async getOn(): Promise<CharacteristicValue> {
-    const t0 = Date.now();
-    const buf = await this.readPeripheralCharacteristic('On', bleLissabonCharacteristic_isOn, 1);
-    if (buf !== undefined) {
-      this.cached_isOn = buf[0] !== 0;
-      this.lampLog.get('On', this.cached_isOn, t0);
-    }
-    return this.cached_isOn;
-  }
-
-  /**
-   * Handle "SET" requests from HomeKit
-   * These are sent when the user changes the state of an accessory, for example, changing the Brightness
-   */
-  async setBrightness(value: CharacteristicValue) {
-    const buf : Buffer = Buffer.alloc(2);
-    buf.writeUInt16LE(Math.round((value as number) * bleBrightnessMax / 100));
-    await this.writePeripheralCharacteristic('Brightness', bleLissabonCharacteristic_brightness, buf, value);
-  }
-
-  async getBrightness(): Promise<CharacteristicValue> {
-    const t0 = Date.now();
-    const buf = await this.readPeripheralCharacteristic('Brightness', bleLissabonCharacteristic_brightness, 2);
-    if (buf !== undefined) {
-      this.cached_brightness = Math.round((buf[0] | (buf[1] << 8)) * 100 / bleBrightnessMax);
-      this.lampLog.get('Brightness', this.cached_brightness, t0);
-    }
-    return this.cached_brightness;
-  }
-
-  async setTemperature(value: CharacteristicValue) {
-    const buf : Buffer = Buffer.alloc(2);
-    buf.writeUInt16LE(Math.round(1000000 / (value as number)));
-    await this.writePeripheralCharacteristic('ColorTemperature', bleLissabonCharacteristic_temperature, buf, value);
-  }
-
-  async getTemperature(): Promise<CharacteristicValue> {
-    const t0 = Date.now();
-    const buf = await this.readPeripheralCharacteristic('ColorTemperature', bleLissabonCharacteristic_temperature, 2);
-    if (buf !== undefined) {
-      const kelvin = buf[0] | (buf[1] << 8);
-      if (kelvin > 0) {
-        this.cached_temperature = Math.min(homekitMiredsMax, Math.max(homekitMiredsMin, Math.round(1000000 / kelvin)));
+    await this.withCharacteristics([characteristicFor[what]], async chars => {
+      if (chars.length === 0) {
+        throw new Error('characteristic ' + characteristicFor[what] + ' not found');
       }
-      this.lampLog.get('ColorTemperature', this.cached_temperature, t0);
-    }
-    return this.cached_temperature;
+      await chars[0].writeAsync(buf, false);
+    });
   }
 }

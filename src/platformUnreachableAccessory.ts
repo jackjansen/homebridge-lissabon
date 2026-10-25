@@ -29,4 +29,8 @@ export class LissabonUnreachableAccessory {
       service.getCharacteristic(this.platform.Characteristic.ColorTemperature).onGet(unreachable).onSet(unreachable);
     }
   }
+
+  stop() {
+    // nothing running
+  }
 }

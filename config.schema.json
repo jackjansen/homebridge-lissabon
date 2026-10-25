@@ -11,37 +11,48 @@
         "required": true,
         "default": "LissabonLighting"
       },
-    
-      "options" : {
-        "title" : "Options",
-        "type" : "object",
-        "properties" : {
-          "discoverWifi" : {
-            "title" : "Auto-discover WiFi devices using mDNS",
+      "options": {
+        "title": "Options",
+        "type": "object",
+        "properties": {
+          "discoverWifi": {
+            "title": "Auto-discover WiFi devices using mDNS",
             "type": "boolean"
           },
-          "discoverBle" : {
-            "title" : "Auto-discover Bluetooth LE devices",
+          "discoverBle": {
+            "title": "Auto-discover Bluetooth LE devices",
             "type": "boolean"
           },
-          "devices" : {
-            "title" : "Lissabon Devices (if not auto-discovering)",
-            "type" : "array",
-            "items" : {
-              "title" : "Device",
-              "type" : "object",
-              "properties" : {
-                "address" : {
-                  "title" : "IP address or hostname, or BLE address",
-                  "type" : "string"
+          "wifiPollInterval": {
+            "title": "Seconds between background reads of WiFi lamps",
+            "type": "integer",
+            "minimum": 5,
+            "placeholder": 30
+          },
+          "blePollInterval": {
+            "title": "Seconds between background reads of Bluetooth LE lamps (each read wakes the lamp, costing battery)",
+            "type": "integer",
+            "minimum": 30,
+            "placeholder": 300
+          },
+          "devices": {
+            "title": "Lissabon Devices (if not auto-discovering)",
+            "type": "array",
+            "items": {
+              "title": "Device",
+              "type": "object",
+              "properties": {
+                "address": {
+                  "title": "IP address or hostname, or BLE address",
+                  "type": "string"
                 },
-                "name" : {
-                  "title" : "Name",
-                  "type" : "string"
+                "name": {
+                  "title": "Name",
+                  "type": "string"
                 },
-                "type" : {
-                  "title" : "Type",
-                  "type" : "string",
+                "type": {
+                  "title": "Type",
+                  "type": "string",
                   "oneOf": [
                     {
                       "title": "LED Strip",
@@ -55,27 +66,27 @@
                         "dimmer"
                       ]
                     }
-                  ]  
+                  ]
                 },
-                "hasBrightness" : {
-                  "title" : "Supports brightness level",
-                  "type" : "boolean"
+                "hasBrightness": {
+                  "title": "Supports brightness level",
+                  "type": "boolean"
                 },
-                "hasTemperature" : {
-                  "title" : "Supports color temperature",
-                  "type" : "boolean"
+                "hasTemperature": {
+                  "title": "Supports color temperature",
+                  "type": "boolean"
                 },
-                "isBluetooth" : {
-                  "title" : "Bluetooth device",
-                  "type" : "boolean"
+                "isBluetooth": {
+                  "title": "Bluetooth device",
+                  "type": "boolean"
                 },
-                "isWiFi" : {
-                  "title" : "WiFi device",
-                  "type" : "boolean"
+                "isWiFi": {
+                  "title": "WiFi device",
+                  "type": "boolean"
                 }
               }
             }
-          }    
+          }
         }
       }
     }

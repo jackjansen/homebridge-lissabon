@@ -15,6 +15,8 @@ export type LissabonDevice = {
 export type LissabonOptions = {
     discoverWifi : boolean;
     discoverBle : boolean;
+    wifiPollInterval? : number; // seconds between background reads of WiFi lamps
+    blePollInterval? : number; // seconds between background reads of BLE lamps (each read wakes the lamp)
     devices : LissabonDevice[];
   };
 

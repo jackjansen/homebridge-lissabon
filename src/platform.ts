@@ -26,6 +26,10 @@ const handlerRank : Record<HandlerKind, number> = { unreachable: 0, ble: 1, wifi
 // A cached lamp that no transport has found for this long is removed (which also removes it from Home)
 const removeAfterMs = 30 * 24 * 3600 * 1000;
 
+// Default poll intervals, seconds (Decided 9 in #1)
+const defaultWifiPollInterval = 30;
+const defaultBlePollInterval = 300;
+
 function capabilities(device : LissabonDevice) : string {
   let rv = device.type + ', on/off';
   if (device.hasBrightness) {
@@ -248,6 +252,9 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
           has_temperature = true;
         }
       }
+      // Disconnect before registering: the new accessory handler reads the lamp straight away
+      await peripheral.disconnectAsync();
+      lampLog.debug('disconnected');
       if (!has_isOn) {
         lampLog.warn('ignored: no isOn characteristic');
       } else {
@@ -274,8 +281,6 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
         lampLog.info('found id ' + address + ', ' + capabilities(device), t0);
         this.registerDevice(device, peripheral);
       }
-      await peripheral.disconnectAsync();
-      lampLog.debug('disconnected');
     } catch(error) {
       lampLog.warn('discovery failed: ' + reasonText(error), t0);
     }
@@ -338,14 +343,15 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
       this.api.updatePlatformAccessories([accessory]);
     }
 
-    // A new handler replaces the previous one's characteristic handlers
+    // A new handler replaces the previous one's characteristic handlers; stop the old one's polling
+    existingHandler?.handler.stop();
     this.handlers.set(uuid, { kind: kind, handler: this.createHandler(accessory, device, noblePeripheral) });
   }
 
   createHandler(accessory : PlatformAccessory, device : LissabonDevice, noblePeripheral? : Peripheral) : LissabonAccessoryHandler {
     if (device.isBluetooth) {
-      return new LissabonBlePlatformAccessory(this, accessory, noblePeripheral as Peripheral);
+      return new LissabonBlePlatformAccessory(this, accessory, noblePeripheral, this.options.blePollInterval || defaultBlePollInterval);
     }
-    return new LissabonWiFiPlatformAccessory(this, accessory);
+    return new LissabonWiFiPlatformAccessory(this, accessory, this.options.wifiPollInterval || defaultWifiPollInterval);
   }
 }
