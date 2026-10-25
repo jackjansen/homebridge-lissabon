@@ -3,6 +3,7 @@ import { Service, PlatformAccessory, CharacteristicValue } from 'homebridge';
 import { LissabonHomebridgePlatform } from './platform';
 
 import { LissabonDevice } from './config';
+import { LampLog } from './lampLog';
 
 import axios from 'axios';
 /**
@@ -13,12 +14,14 @@ import axios from 'axios';
 export class LissabonWiFiPlatformAccessory {
   private service: Service;
   private device : LissabonDevice;
+  private lampLog : LampLog;
 
   constructor(
     private readonly platform: LissabonHomebridgePlatform,
     private readonly accessory: PlatformAccessory,
   ) {
     this.device = accessory.context.device;
+    this.lampLog = new LampLog(platform.log, this.device.name, 'wifi');
     // set accessory information
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(this.platform.Characteristic.Manufacturer, 'jackjansen')
@@ -60,25 +63,34 @@ export class LissabonWiFiPlatformAccessory {
     return `http://${this.device.ipAddress ?? this.device.address}/api/${this.device.type}`;
   }
 
+  async put(what : string, body : object, value : CharacteristicValue) {
+    const t0 = Date.now();
+    try {
+      await axios.put(this.apiUrl(), body);
+    } catch(error) {
+      this.lampLog.failed('set', what, error, t0);
+      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    }
+    this.lampLog.set(what, value, t0);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async get(what : string) : Promise<any> {
+    try {
+      const { data } = await axios.get(this.apiUrl());
+      return data;
+    } catch(error) {
+      this.lampLog.failed('get', what, error);
+      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    }
+  }
+
   /**
    * Handle "SET" requests from HomeKit
    * These are sent when the user changes the state of an accessory, for example, turning on a Light bulb.
    */
   async setOn(value: CharacteristicValue) {
-
-    this.platform.log.info('Set Characteristic On ->', value, ' to ', this.device.address);
-    try {
-      await axios.put(
-        this.apiUrl(),
-        {
-          isOn: value as boolean,
-        },
-      );
-
-    } catch(error) {
-      this.platform.log.debug('Error: ', error);
-      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
-    }
+    await this.put('On', { isOn: value as boolean }, value);
   }
 
   /**
@@ -95,22 +107,11 @@ export class LissabonWiFiPlatformAccessory {
    * this.service.updateCharacteristic(this.platform.Characteristic.On, true)
    */
   async getOn(): Promise<CharacteristicValue> {
-    // implement your own code to check if the device is on
-
-    try {
-      const { data } = await axios.get(this.apiUrl());
-      const isOn = data.isOn;
-      this.platform.log.info('Get Characteristic On ->', isOn, ' from ', this.device.address);
-
-      // if you need to return an error to show the device as "Not Responding" in the Home app:
-      // throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
-
-      return isOn;
-    } catch(error) {
-      this.platform.log.debug('Error: ', error);
-      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
-    }
-
+    const t0 = Date.now();
+    const data = await this.get('On');
+    const isOn = data.isOn;
+    this.lampLog.get('On', isOn, t0);
+    return isOn;
   }
 
   /**
@@ -118,75 +119,27 @@ export class LissabonWiFiPlatformAccessory {
    * These are sent when the user changes the state of an accessory, for example, changing the Brightness
    */
   async setBrightness(value: CharacteristicValue) {
-    // implement your own code to set the brightness
-
-    this.platform.log.info('Set Characteristic Brightness -> ', value, ' to ', this.device.address);
-    try {
-      await axios.put(
-        this.apiUrl(),
-        {
-          level: (value as number) / 100.0,
-        },
-      );
-
-    } catch(error) {
-      this.platform.log.debug('Error: ', error);
-      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
-    }
+    await this.put('Brightness', { level: (value as number) / 100.0 }, value);
   }
 
   async getBrightness(): Promise<CharacteristicValue> {
-    // implement your own code to check if the device is on
-
-    try {
-      const { data } = await axios.get(this.apiUrl());
-      const brightness = Math.round(data.level * 100);
-      this.platform.log.info('Get Characteristic Brightness ->', brightness, ' from ', this.device.address);
-
-      // if you need to return an error to show the device as "Not Responding" in the Home app:
-      // throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
-
-      return brightness;
-    } catch(error) {
-      this.platform.log.debug('Error: ', error);
-      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
-    }
+    const t0 = Date.now();
+    const data = await this.get('Brightness');
+    const brightness = Math.round(data.level * 100);
+    this.lampLog.get('Brightness', brightness, t0);
+    return brightness;
   }
 
   async setTemperature(value: CharacteristicValue) {
-    // implement your own code to set the brightness
-
-    this.platform.log.info('Set Characteristic Temperature -> ', value, ' to ', this.device.address);
-    try {
-      await axios.put(
-        this.apiUrl(),
-        {
-          temperature: Math.round(1000000.0 / (value as number)),
-        },
-      );
-
-    } catch(error) {
-      this.platform.log.debug('Error: ', error);
-      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
-    }
+    await this.put('ColorTemperature', { temperature: Math.round(1000000.0 / (value as number)) }, value);
   }
 
   async getTemperature(): Promise<CharacteristicValue> {
-    // implement your own code to check if the device is on
-
-    try {
-      const { data } = await axios.get(this.apiUrl());
-      // HomeKit wants an integer number of mireds, between 140 and 500
-      const temperature = Math.min(500, Math.max(140, Math.round(1000000.0 / data.temperature)));
-      this.platform.log.info('Get Characteristic Temperature ->', temperature, ' from ', this.device.address);
-
-      // if you need to return an error to show the device as "Not Responding" in the Home app:
-      // throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
-
-      return temperature;
-    } catch(error) {
-      this.platform.log.debug('Error: ', error);
-      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
-    }
+    const t0 = Date.now();
+    const data = await this.get('ColorTemperature');
+    // HomeKit wants an integer number of mireds, between 140 and 500
+    const temperature = Math.min(500, Math.max(140, Math.round(1000000.0 / data.temperature)));
+    this.lampLog.get('ColorTemperature', temperature, t0);
+    return temperature;
   }
 }

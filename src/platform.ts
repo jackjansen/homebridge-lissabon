@@ -10,12 +10,24 @@ import {
 } from './platformBleAccessory';
 import { LissabonWiFiPlatformAccessory } from './platformWiFiAccessory';
 import { LissabonConfig, LissabonDevice, LissabonOptions } from './config';
+import { LampLog, reasonText } from './lampLog';
 import noble, { Peripheral } from '@stoprocent/noble';
 import mdns from 'mdns';
 import axios from 'axios';
 import { isIPv4 } from 'net';
 
 type LissabonAccessoryHandler = LissabonBlePlatformAccessory | LissabonWiFiPlatformAccessory;
+
+function capabilities(device : LissabonDevice) : string {
+  let rv = device.type + ', on/off';
+  if (device.hasBrightness) {
+    rv += ', brightness';
+  }
+  if (device.hasTemperature) {
+    rv += ', temperature';
+  }
+  return rv;
+}
 
 /**
  * HomebridgePlatform
@@ -106,7 +118,6 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
       this.log.debug('mDNS: service ' + service.name + ' has no dimmer or ledstrip service, ignoring');
       return;
     }
-    this.log.debug('mDNS: service ' + service.name + ' should be a Lissabon device: ', service);
     const ipAddress = service.addresses.find(a => isIPv4(a));
     let address = ipAddress ?? service.addresses[0];
     let name = service.name;
@@ -115,6 +126,8 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
     } else {
       address = name + '.local.';
     }
+    const lampLog = new LampLog(this.log, name, 'mdns');
+    lampLog.debug('service up, addresses ' + service.addresses.join(' '));
     const device : LissabonDevice = {
       address : address,
       name : name,
@@ -130,13 +143,14 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
       device.hasBrightness = data.level !== undefined;
       device.hasTemperature = data.temperature !== undefined;
     } catch(error) {
-      this.log.warn('mDNS: cannot get capabilities of ' + name + ', assuming on/off only: ', error);
+      lampLog.warn('cannot get capabilities, assuming on/off only: ' + reasonText(error));
     }
+    lampLog.info('found ' + (ipAddress ?? address) + ', ' + capabilities(device));
     this.registerDevice(device, undefined);
   }
 
   mdnsServiceDown(service : mdns.Service) {
-    this.log.debug('mDNS: service down: ', service);
+    new LampLog(this.log, service.name ?? '?', 'mdns').debug('service down');
   }
 
   discoverBleDevices() {
@@ -155,7 +169,6 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
   }
 
   async blePeripheralDiscovered(peripheral : Peripheral) {
-    this.log.debug('BLE: peripheral discovered: ', peripheral);
     if (!peripheral || !peripheral.advertisement) {
       return;
     }
@@ -165,13 +178,14 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
     if (peripheral.advertisement.serviceUuids.indexOf(bleLissabonService) < 0) {
       return;
     }
-    this.log.debug('BLE: peripheralDiscovered addr=', peripheral.address, ', name =', peripheral.advertisement.localName);
-    this.log.debug('BLE: advertisement: ', peripheral.advertisement);
+    const lampLog = new LampLog(this.log, peripheral.advertisement.localName || peripheral.id, 'ble');
+    lampLog.debug('advertisement seen, id ' + peripheral.id + ', address "' + peripheral.address + '", rssi ' + peripheral.rssi);
+    const t0 = Date.now();
     try {
       //await noble.stopScanningAsync();
       //this.log.info('xxxjack stopScanning done');
       await peripheral.connectAsync();
-      this.log.debug('BLE: connectAsync done');
+      lampLog.debug('connected', t0);
       //this.log.info('xxx now peripheral: ', peripheral);
       const wtdServices = [bleLissabonService];
       const wtdCharacteristics = [
@@ -186,7 +200,7 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
       let has_brightness = false;
       let has_temperature = false;
       for (const ch of characteristics) {
-        this.log.debug('BLE: characteristic: ', ch.uuid);
+        lampLog.debug('characteristic ' + ch.uuid);
         if (ch.uuid === bleLissabonCharacteristic_isOn) {
           has_isOn = true;
         }
@@ -198,7 +212,7 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
         }
       }
       if (!has_isOn) {
-        this.log.warn('BLE: BLE device without isOn characteristic ignored');
+        lampLog.warn('ignored: no isOn characteristic');
       } else {
         // We need to provide different addresses depending on whether it's Linux or MacOS.
         // And we need to provide a default for the name.
@@ -219,12 +233,13 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
           hasTemperature : has_temperature,
           isBluetooth : true,
         };
+        lampLog.info('found id ' + address + ', ' + capabilities(device), t0);
         this.registerDevice(device, peripheral);
       }
       await peripheral.disconnectAsync();
-      this.log.debug('BLE: disconnectAsync done');
+      lampLog.debug('disconnected');
     } catch(error) {
-      this.log.error('BLE: discoverServices error: ', error);
+      lampLog.warn('discovery failed: ' + reasonText(error), t0);
     }
   }
 
@@ -275,7 +290,7 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
       this.handlers.set(uuid, this.createHandler(existingAccessory, device, noblePeripheral));
     } else {
       // the accessory does not yet exist, so we need to create it
-      this.log.info('Adding new accessory:', device);
+      this.log.info('Adding new accessory:', device.name, '(' + (device.isBluetooth ? 'ble' : 'wifi') + ')');
 
       // create a new accessory
       const accessory = new this.api.platformAccessory(device.name, uuid);
