@@ -56,6 +56,10 @@ export class LissabonWiFiPlatformAccessory {
     }
   }
 
+  apiUrl() : string {
+    return `http://${this.device.ipAddress ?? this.device.address}/api/${this.device.type}`;
+  }
+
   /**
    * Handle "SET" requests from HomeKit
    * These are sent when the user changes the state of an accessory, for example, turning on a Light bulb.
@@ -65,7 +69,7 @@ export class LissabonWiFiPlatformAccessory {
     this.platform.log.info('Set Characteristic On ->', value, ' to ', this.device.address);
     try {
       await axios.put(
-        `http://${this.device.address}/api/${this.device.type}`,
+        this.apiUrl(),
         {
           isOn: value as boolean,
         },
@@ -94,7 +98,7 @@ export class LissabonWiFiPlatformAccessory {
     // implement your own code to check if the device is on
 
     try {
-      const { data } = await axios.get(`http://${this.device.address}/api/${this.device.type}`);
+      const { data } = await axios.get(this.apiUrl());
       const isOn = data.isOn;
       this.platform.log.info('Get Characteristic On ->', isOn, ' from ', this.device.address);
 
@@ -119,7 +123,7 @@ export class LissabonWiFiPlatformAccessory {
     this.platform.log.info('Set Characteristic Brightness -> ', value, ' to ', this.device.address);
     try {
       await axios.put(
-        `http://${this.device.address}/api/${this.device.type}`,
+        this.apiUrl(),
         {
           level: (value as number) / 100.0,
         },
@@ -135,7 +139,7 @@ export class LissabonWiFiPlatformAccessory {
     // implement your own code to check if the device is on
 
     try {
-      const { data } = await axios.get(`http://${this.device.address}/api/${this.device.type}`);
+      const { data } = await axios.get(this.apiUrl());
       const brightness = Math.round(data.level * 100);
       this.platform.log.info('Get Characteristic Brightness ->', brightness, ' from ', this.device.address);
 
@@ -155,9 +159,9 @@ export class LissabonWiFiPlatformAccessory {
     this.platform.log.info('Set Characteristic Temperature -> ', value, ' to ', this.device.address);
     try {
       await axios.put(
-        `http://${this.device.address}/api/${this.device.type}`,
+        this.apiUrl(),
         {
-          temperature: 1000000.0 / (value as number),
+          temperature: Math.round(1000000.0 / (value as number)),
         },
       );
 
@@ -171,8 +175,9 @@ export class LissabonWiFiPlatformAccessory {
     // implement your own code to check if the device is on
 
     try {
-      const { data } = await axios.get(`http://${this.device.address}/api/${this.device.type}`);
-      const temperature = 1000000.0 / data.temperature;
+      const { data } = await axios.get(this.apiUrl());
+      // HomeKit wants an integer number of mireds, between 140 and 500
+      const temperature = Math.min(500, Math.max(140, Math.round(1000000.0 / data.temperature)));
       this.platform.log.info('Get Characteristic Temperature ->', temperature, ' from ', this.device.address);
 
       // if you need to return an error to show the device as "Not Responding" in the Home app:

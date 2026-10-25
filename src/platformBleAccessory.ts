@@ -4,13 +4,19 @@ import { LissabonHomebridgePlatform } from './platform';
 
 import { LissabonDevice } from './config';
 
-import noble from '@abandonware/noble';
+import { Peripheral, Characteristic as NobleCharacteristic } from '@stoprocent/noble';
 
 
 export const bleLissabonService = '6b2f000138bc4204a5061d3546ad3688';
 export const bleLissabonCharacteristic_isOn = '6b2f000238bc4204a5061d3546ad3688';
 export const bleLissabonCharacteristic_brightness = '6b2f000438bc4204a5061d3546ad3688';
-export const bleLissabonCharacteristic_temperature = '6b2f005238bc4204a5061d3546ad3688';
+export const bleLissabonCharacteristic_temperature = '6b2f000538bc4204a5061d3546ad3688';
+
+// The firmware's brightness is uint16 (0..65535), HomeKit's is a percentage
+const bleBrightnessMax = 65535;
+// The firmware's temperature is in Kelvin, HomeKit's in mireds, with this range
+const homekitMiredsMin = 140;
+const homekitMiredsMax = 500;
 
 /**
  * Platform Accessory
@@ -20,16 +26,16 @@ export const bleLissabonCharacteristic_temperature = '6b2f005238bc4204a5061d3546
 export class LissabonBlePlatformAccessory {
   private service: Service;
   private device : LissabonDevice;
-  private noblePeripheral? : noble.Peripheral;
+  private noblePeripheral? : Peripheral;
   private log : Logger;
   private cached_isOn = false;
   private cached_brightness = 0;
-  private cached_temperature = 0;
+  private cached_temperature = 250; // mireds, the firmware's default of 4000K
 
   constructor(
     private readonly platform: LissabonHomebridgePlatform,
     private readonly accessory: PlatformAccessory,
-    private readonly _noblePeripheral : noble.Peripheral,
+    private readonly _noblePeripheral : Peripheral,
   ) {
     this.device = accessory.context.device;
     this.noblePeripheral = _noblePeripheral;
@@ -85,15 +91,15 @@ export class LissabonBlePlatformAccessory {
     return true;
   }
 
-  async connectPeripheral(char : string) : Promise<noble.Characteristic|undefined> {
+  async connectPeripheral(char : string) : Promise<NobleCharacteristic|undefined> {
     if(!this.initDevice()) {
       return undefined;
     }
     this.log.debug('[' + this.device.name + '] ' + this.device.address, 'state=', this.noblePeripheral!.state);
     await this.noblePeripheral!.connectAsync();
     const { characteristics } = await this.noblePeripheral!.discoverSomeServicesAndCharacteristicsAsync(
-        [bleLissabonService],
-        [char]);
+      [bleLissabonService],
+      [char]);
     if (characteristics.length === 0) {
       this.log.error('[' + this.device.name + '] BLE-Characteristic' + char + ' not found for peripheral ');
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
@@ -102,7 +108,10 @@ export class LissabonBlePlatformAccessory {
   }
 
   async writePeripheralCharacteristic(lissabonCh : string, buf: Buffer) : Promise<boolean> {
-    
+    if (!this.initDevice()) {
+      // Busy with another connection: report the failure, so HomeKit doesn't assume the write happened
+      throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    }
     try {
       const ch = await this.connectPeripheral(lissabonCh);
       if (ch === undefined) {
@@ -145,7 +154,7 @@ export class LissabonBlePlatformAccessory {
   async setOn(value: CharacteristicValue) {
     this.log.debug('[' + this.device.name + '] SetOn(' + value + ')');
     const buf : Buffer = Buffer.alloc(1);
-    buf[0] = value as number;
+    buf[0] = value ? 1 : 0;
     await this.writePeripheralCharacteristic(bleLissabonCharacteristic_isOn, buf);
   }
 
@@ -182,9 +191,7 @@ export class LissabonBlePlatformAccessory {
   async setBrightness(value: CharacteristicValue) {
     this.log.debug('[' + this.device.name + '] SetBrightness(' + value + ')');
     const buf : Buffer = Buffer.alloc(2);
-    const v = value as number;
-    buf[0] = v & 0xff;
-    buf[1] = v >> 8;
+    buf.writeUInt16LE(Math.round((value as number) * bleBrightnessMax / 100));
     await this.writePeripheralCharacteristic(bleLissabonCharacteristic_brightness, buf);
   }
 
@@ -196,7 +203,7 @@ export class LissabonBlePlatformAccessory {
       if (buf.byteLength !== 2) {
         this.log.warn(`Unexpected length ${buf.byteLength} for BLE read of brightness characteristic`);
       }
-      this.cached_brightness = buf[0] | (buf[1] << 8);
+      this.cached_brightness = Math.round((buf[0] | (buf[1] << 8)) * 100 / bleBrightnessMax);
       this.log.debug('[' + this.device.name + '] GetBrightness() brightness=', this.cached_brightness);
     }
     return this.cached_brightness;
@@ -205,10 +212,8 @@ export class LissabonBlePlatformAccessory {
   async setTemperature(value: CharacteristicValue) {
     this.log.debug('[' + this.device.name + '] SetTemperature(' + value + ')');
     const buf : Buffer = Buffer.alloc(2);
-    const v = value as number;
-    buf[0] = v & 0xff;
-    buf[1] = v >> 8;
-    await this.writePeripheralCharacteristic(bleLissabonCharacteristic_temperature, buf);  
+    buf.writeUInt16LE(Math.round(1000000 / (value as number)));
+    await this.writePeripheralCharacteristic(bleLissabonCharacteristic_temperature, buf);
   }
 
   async getTemperature(): Promise<CharacteristicValue> {
@@ -219,7 +224,10 @@ export class LissabonBlePlatformAccessory {
       if (buf.byteLength !== 2) {
         this.log.warn(`Unexpected length ${buf.byteLength} for BLE read of temperature characteristic`);
       }
-      this.cached_temperature = buf[0] | (buf[1] << 8);
+      const kelvin = buf[0] | (buf[1] << 8);
+      if (kelvin > 0) {
+        this.cached_temperature = Math.min(homekitMiredsMax, Math.max(homekitMiredsMin, Math.round(1000000 / kelvin)));
+      }
       this.log.debug('[' + this.device.name + '] GetTemperature() temperature=', this.cached_temperature);
     }
     return this.cached_temperature;

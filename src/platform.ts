@@ -1,4 +1,4 @@
-import { API, DynamicPlatformPlugin, Logger, PlatformAccessory, PlatformConfig, Service, Characteristic } from 'homebridge';
+import { API, DynamicPlatformPlugin, Logger, PlatformAccessory, Service, Characteristic } from 'homebridge';
 
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import {
@@ -10,8 +10,13 @@ import {
 } from './platformBleAccessory';
 import { LissabonWiFiPlatformAccessory } from './platformWiFiAccessory';
 import { LissabonConfig, LissabonDevice, LissabonOptions } from './config';
-import noble from '@abandonware/noble';
+import noble, { Peripheral } from '@stoprocent/noble';
 import mdns from 'mdns';
+import axios from 'axios';
+import { isIPv4 } from 'net';
+
+type LissabonAccessoryHandler = LissabonBlePlatformAccessory | LissabonWiFiPlatformAccessory;
+
 /**
  * HomebridgePlatform
  * This class is the main constructor for your plugin, this is where you should
@@ -23,6 +28,9 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
 
   // this is used to track restored cached accessories
   public readonly accessories: PlatformAccessory[] = [];
+
+  // accessory handlers created in this run, by accessory UUID, so discovery seeing a device again doesn't create a second one
+  private readonly handlers = new Map<string, LissabonAccessoryHandler>();
 
   private options! : LissabonOptions;
 
@@ -84,24 +92,29 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
     this.log.info('mDNS: Started browsing for services.');
   }
 
-  mdnsServiceUp(service : mdns.Service) {
+  async mdnsServiceUp(service : mdns.Service) {
     if (service.txtRecord === undefined) {
       this.log.debug('mDNS: service ' + service.name + ' has no txtRecord, ignoring');
       return;
     }
-    if (service.txtRecord.dimmer === undefined) {
-      this.log.debug('mDNS: service ' + service.name + ' has no dimmer service, ignoring');
+    let type : string;
+    if (service.txtRecord.dimmer !== undefined) {
+      type = 'dimmer';
+    } else if (service.txtRecord.ledstrip !== undefined) {
+      type = 'ledstrip';
+    } else {
+      this.log.debug('mDNS: service ' + service.name + ' has no dimmer or ledstrip service, ignoring');
       return;
     }
     this.log.debug('mDNS: service ' + service.name + ' should be a Lissabon device: ', service);
-    let address = service.addresses[0];
+    const ipAddress = service.addresses.find(a => isIPv4(a));
+    let address = ipAddress ?? service.addresses[0];
     let name = service.name;
     if (name === '' || name === undefined ) {
       name = address;
     } else {
       address = name + '.local.';
     }
-    const type =  'dimmer';
     const device : LissabonDevice = {
       address : address,
       name : name,
@@ -109,7 +122,16 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
       hasBrightness : false,
       hasTemperature : false,
       isBluetooth : false,
+      ipAddress : ipAddress,
     };
+    // Ask the device which values it has
+    try {
+      const { data } = await axios.get(`http://${ipAddress ?? address}/api/${type}`, { timeout: 5000 });
+      device.hasBrightness = data.level !== undefined;
+      device.hasTemperature = data.temperature !== undefined;
+    } catch(error) {
+      this.log.warn('mDNS: cannot get capabilities of ' + name + ', assuming on/off only: ', error);
+    }
     this.registerDevice(device, undefined);
   }
 
@@ -132,7 +154,7 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
     noble.on('discover', this.blePeripheralDiscovered.bind(this));
   }
 
-  async blePeripheralDiscovered(peripheral : noble.Peripheral) {
+  async blePeripheralDiscovered(peripheral : Peripheral) {
     this.log.debug('BLE: peripheral discovered: ', peripheral);
     if (!peripheral || !peripheral.advertisement) {
       return;
@@ -157,7 +179,7 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
         bleLissabonCharacteristic_brightness,
         bleLissabonCharacteristic_temperature,
       ];
-      const { services, characteristics } = await peripheral.discoverSomeServicesAndCharacteristicsAsync(wtdServices, wtdCharacteristics);
+      const { characteristics } = await peripheral.discoverSomeServicesAndCharacteristicsAsync(wtdServices, wtdCharacteristics);
       //this.log.info('xxxjack services: ', services);
       //this.log.info('xxxjack characteristics: ', characteristics);
       let has_isOn = false;
@@ -213,15 +235,29 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
       return;
     }
     for (const device of this.options.devices) {
+      // The settings UI can save an empty entry; skipping it keeps discovery (started after this) working
+      if (!device.address) {
+        this.log.warn('Ignoring configured device without address:', device);
+        continue;
+      }
       this.registerDevice(device, undefined);
     }
   }
 
-  registerDevice(device : LissabonDevice, noblePeripheral? : noble.Peripheral) {
+  registerDevice(device : LissabonDevice, noblePeripheral? : Peripheral) {
     // generate a unique id for the accessory this should be generated from
     // something globally unique, but constant, for example, the device serial
     // number or MAC address
     const uuid = this.api.hap.uuid.generate(device.address);
+
+    if (this.handlers.has(uuid)) {
+      // Seen again in this run (mDNS reports a service once per network interface). Refresh what
+      // discovery learned, such as the IP address; the handler shares the context.device object.
+      const accessory = this.accessories.find(accessory => accessory.UUID === uuid)!;
+      Object.assign(accessory.context.device, device);
+      this.log.debug('Already handling accessory:', accessory.displayName);
+      return;
+    }
 
     // see if an accessory with the same uuid has already been registered and restored from
     // the cached devices we stored in the `configureAccessory` method above
@@ -231,22 +267,12 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
       // the accessory already exists
       this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
 
-      // if you need to update the accessory.context then you should run `api.updatePlatformAccessories`. eg.:
-      // existingAccessory.context.device = device;
-      // this.api.updatePlatformAccessories([existingAccessory]);
+      // the cached context may be stale (older plugin version, changed capabilities), use what discovery found
+      existingAccessory.context.device = device;
+      this.api.updatePlatformAccessories([existingAccessory]);
 
       // create the accessory handler for the restored accessory
-      // this is imported from `platformAccessory.ts`
-      if (device.isBluetooth) {
-        new LissabonBlePlatformAccessory(this, existingAccessory, noblePeripheral as noble.Peripheral);
-      } else {
-        new LissabonWiFiPlatformAccessory(this, existingAccessory);
-      }
-
-      // it is possible to remove platform accessories at any time using `api.unregisterPlatformAccessories`, eg.:
-      // remove platform accessories when no longer present
-      // this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [existingAccessory]);
-      // this.log.info('Removing existing accessory from cache:', existingAccessory.displayName);
+      this.handlers.set(uuid, this.createHandler(existingAccessory, device, noblePeripheral));
     } else {
       // the accessory does not yet exist, so we need to create it
       this.log.info('Adding new accessory:', device);
@@ -259,15 +285,18 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
       accessory.context.device = device;
 
       // create the accessory handler for the newly create accessory
-      // this is imported from `platformAccessory.ts`
-      if (device.isBluetooth) {
-        new LissabonBlePlatformAccessory(this, accessory, noblePeripheral as noble.Peripheral);
-      } else {
-        new LissabonWiFiPlatformAccessory(this, accessory);
-      }
+      this.handlers.set(uuid, this.createHandler(accessory, device, noblePeripheral));
 
-      // link the accessory to your platform
+      // link the accessory to your platform, and remember it so a second discovery doesn't register it again
       this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+      this.accessories.push(accessory);
     }
+  }
+
+  createHandler(accessory : PlatformAccessory, device : LissabonDevice, noblePeripheral? : Peripheral) : LissabonAccessoryHandler {
+    if (device.isBluetooth) {
+      return new LissabonBlePlatformAccessory(this, accessory, noblePeripheral as Peripheral);
+    }
+    return new LissabonWiFiPlatformAccessory(this, accessory);
   }
 }
