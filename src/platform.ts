@@ -9,6 +9,7 @@ import {
   bleLissabonCharacteristic_temperature,
 } from './platformBleAccessory';
 import { LissabonWiFiPlatformAccessory } from './platformWiFiAccessory';
+import { LissabonUnreachableAccessory } from './platformUnreachableAccessory';
 import { LissabonConfig, LissabonDevice, LissabonOptions } from './config';
 import { LampLog, reasonText } from './lampLog';
 import noble, { Peripheral } from '@stoprocent/noble';
@@ -16,7 +17,14 @@ import mdns from 'mdns';
 import axios from 'axios';
 import { isIPv4 } from 'net';
 
-type LissabonAccessoryHandler = LissabonBlePlatformAccessory | LissabonWiFiPlatformAccessory;
+type LissabonAccessoryHandler = LissabonBlePlatformAccessory | LissabonWiFiPlatformAccessory | LissabonUnreachableAccessory;
+
+// Which handler an accessory has; a higher rank replaces a lower one (WiFi is preferred over BLE)
+type HandlerKind = 'unreachable' | 'ble' | 'wifi';
+const handlerRank : Record<HandlerKind, number> = { unreachable: 0, ble: 1, wifi: 2 };
+
+// A cached lamp that no transport has found for this long is removed (which also removes it from Home)
+const removeAfterMs = 30 * 24 * 3600 * 1000;
 
 function capabilities(device : LissabonDevice) : string {
   let rv = device.type + ', on/off';
@@ -42,7 +50,7 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
   public readonly accessories: PlatformAccessory[] = [];
 
   // accessory handlers created in this run, by accessory UUID, so discovery seeing a device again doesn't create a second one
-  private readonly handlers = new Map<string, LissabonAccessoryHandler>();
+  private readonly handlers = new Map<string, { kind : HandlerKind; handler : LissabonAccessoryHandler }>();
 
   private options! : LissabonOptions;
 
@@ -65,6 +73,7 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
     // in order to ensure they weren't added to homebridge already. This event can also be used
     // to start discovery of new accessories.
     this.api.on('didFinishLaunching', () => {
+      this.handleCachedAccessories();
       this.registerDevices();
       if (this.options.discoverWifi) {
         this.discoverWifiDevices();
@@ -85,6 +94,33 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
 
     // add the restored accessory to the accessories cache so we can track if it has already been registered
     this.accessories.push(accessory);
+  }
+
+  /**
+   * Remove cached accessories from older plugin versions (not identified by hostname) and lamps not found
+   * for a long time. The others get a handler that reports "No Response" until a transport finds them.
+   */
+  handleCachedAccessories() {
+    const now = Date.now();
+    const remove : PlatformAccessory[] = [];
+    for (const accessory of this.accessories) {
+      const device : LissabonDevice | undefined = accessory.context.device;
+      if (device === undefined || device.hostname === undefined) {
+        this.log.info('Removing cached accessory from an older plugin version:', accessory.displayName);
+        remove.push(accessory);
+      } else if (device.lastSeen !== undefined && now - device.lastSeen > removeAfterMs) {
+        this.log.info('Removing cached accessory not seen since', new Date(device.lastSeen).toISOString() + ':', accessory.displayName);
+        remove.push(accessory);
+      } else if (!this.handlers.has(accessory.UUID)) {
+        this.handlers.set(accessory.UUID, { kind: 'unreachable', handler: new LissabonUnreachableAccessory(this, accessory) });
+      }
+    }
+    if (remove.length > 0) {
+      this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, remove);
+      for (const accessory of remove) {
+        this.accessories.splice(this.accessories.indexOf(accessory), 1);
+      }
+    }
   }
 
   /**
@@ -129,6 +165,7 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
     const lampLog = new LampLog(this.log, name, 'mdns');
     lampLog.debug('service up, addresses ' + service.addresses.join(' '));
     const device : LissabonDevice = {
+      hostname : name.toLowerCase(),
       address : address,
       name : name,
       type : type,
@@ -226,6 +263,7 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
         }
         const type = has_temperature ? 'ledstrip' : 'dimmer';
         const device : LissabonDevice = {
+          hostname : name.toLowerCase(),
           address : address,
           name : name,
           type : type,
@@ -255,57 +293,53 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
         this.log.warn('Ignoring configured device without address:', device);
         continue;
       }
+      if (!device.name) {
+        device.name = device.address;
+      }
+      device.hostname = device.name.toLowerCase();
       this.registerDevice(device, undefined);
     }
   }
 
   registerDevice(device : LissabonDevice, noblePeripheral? : Peripheral) {
-    // generate a unique id for the accessory this should be generated from
-    // something globally unique, but constant, for example, the device serial
-    // number or MAC address
-    const uuid = this.api.hap.uuid.generate(device.address);
+    // One accessory per lamp, whichever transport finds it: the hostname is the identity (Decided 1 in #1)
+    const uuid = this.api.hap.uuid.generate(device.hostname);
+    const kind : HandlerKind = device.isBluetooth ? 'ble' : 'wifi';
+    device.lastSeen = Date.now();
 
-    if (this.handlers.has(uuid)) {
-      // Seen again in this run (mDNS reports a service once per network interface). Refresh what
-      // discovery learned, such as the IP address; the handler shares the context.device object.
-      const accessory = this.accessories.find(accessory => accessory.UUID === uuid)!;
-      Object.assign(accessory.context.device, device);
-      this.log.debug('Already handling accessory:', accessory.displayName);
-      return;
+    const existingHandler = this.handlers.get(uuid);
+    let accessory = this.accessories.find(accessory => accessory.UUID === uuid);
+    if (existingHandler !== undefined && accessory !== undefined) {
+      if (existingHandler.kind === kind) {
+        // Seen again over the same transport (mDNS reports a service once per network interface). Refresh what
+        // discovery learned, such as the IP address; the handler shares the context.device object.
+        Object.assign(accessory.context.device, device);
+        this.api.updatePlatformAccessories([accessory]);
+        this.log.debug('Already handling accessory:', accessory.displayName);
+        return;
+      }
+      if (handlerRank[existingHandler.kind] > handlerRank[kind]) {
+        this.log.debug('Accessory', accessory.displayName, 'also reachable over', kind + ', keeping', existingHandler.kind);
+        return;
+      }
+      this.log.info('Accessory', accessory.displayName, 'now reachable over', kind + ', was', existingHandler.kind);
     }
 
-    // see if an accessory with the same uuid has already been registered and restored from
-    // the cached devices we stored in the `configureAccessory` method above
-    const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
-
-    if (existingAccessory) {
-      // the accessory already exists
-      this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
-
-      // the cached context may be stale (older plugin version, changed capabilities), use what discovery found
-      existingAccessory.context.device = device;
-      this.api.updatePlatformAccessories([existingAccessory]);
-
-      // create the accessory handler for the restored accessory
-      this.handlers.set(uuid, this.createHandler(existingAccessory, device, noblePeripheral));
-    } else {
-      // the accessory does not yet exist, so we need to create it
-      this.log.info('Adding new accessory:', device.name, '(' + (device.isBluetooth ? 'ble' : 'wifi') + ')');
-
-      // create a new accessory
-      const accessory = new this.api.platformAccessory(device.name, uuid);
-
-      // store a copy of the device object in the `accessory.context`
-      // the `context` property can be used to store any data about the accessory you may need
+    if (accessory === undefined) {
+      this.log.info('Adding new accessory:', device.name, '(' + kind + ')');
+      accessory = new this.api.platformAccessory(device.name, uuid);
       accessory.context.device = device;
-
-      // create the accessory handler for the newly create accessory
-      this.handlers.set(uuid, this.createHandler(accessory, device, noblePeripheral));
-
-      // link the accessory to your platform, and remember it so a second discovery doesn't register it again
       this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+      // remember it, so a second discovery doesn't register it again
       this.accessories.push(accessory);
+    } else {
+      // the cached context may be stale (older plugin version, changed capabilities), use what discovery found
+      accessory.context.device = device;
+      this.api.updatePlatformAccessories([accessory]);
     }
+
+    // A new handler replaces the previous one's characteristic handlers
+    this.handlers.set(uuid, { kind: kind, handler: this.createHandler(accessory, device, noblePeripheral) });
   }
 
   createHandler(accessory : PlatformAccessory, device : LissabonDevice, noblePeripheral? : Peripheral) : LissabonAccessoryHandler {

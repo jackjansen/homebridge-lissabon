@@ -45,7 +45,7 @@ export class LissabonBlePlatformAccessory {
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(this.platform.Characteristic.Manufacturer, 'jackjansen')
       .setCharacteristic(this.platform.Characteristic.Model, this.device.type)
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, this.device.address);
+      .setCharacteristic(this.platform.Characteristic.SerialNumber, this.device.hostname);
 
     // get the LightBulb service if it exists, otherwise create a new LightBulb service
     // you can create multiple services for each accessory

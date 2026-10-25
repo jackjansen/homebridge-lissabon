@@ -25,8 +25,8 @@ export class LissabonWiFiPlatformAccessory {
     // set accessory information
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(this.platform.Characteristic.Manufacturer, 'jackjansen')
-      .setCharacteristic(this.platform.Characteristic.Model, 'Lissabon Dimmer')
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, '0000');
+      .setCharacteristic(this.platform.Characteristic.Model, this.device.type)
+      .setCharacteristic(this.platform.Characteristic.SerialNumber, this.device.hostname);
 
     // get the LightBulb service if it exists, otherwise create a new LightBulb service
     // you can create multiple services for each accessory
