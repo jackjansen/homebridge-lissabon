@@ -34,58 +34,6 @@
             "type": "integer",
             "minimum": 30,
             "placeholder": 300
-          },
-          "devices": {
-            "title": "Lissabon Devices (if not auto-discovering)",
-            "type": "array",
-            "items": {
-              "title": "Device",
-              "type": "object",
-              "properties": {
-                "address": {
-                  "title": "IP address or hostname, or BLE address",
-                  "type": "string"
-                },
-                "name": {
-                  "title": "Name",
-                  "type": "string"
-                },
-                "type": {
-                  "title": "Type",
-                  "type": "string",
-                  "oneOf": [
-                    {
-                      "title": "LED Strip",
-                      "enum": [
-                        "ledstrip"
-                      ]
-                    },
-                    {
-                      "title": "Dimmer",
-                      "enum": [
-                        "dimmer"
-                      ]
-                    }
-                  ]
-                },
-                "hasBrightness": {
-                  "title": "Supports brightness level",
-                  "type": "boolean"
-                },
-                "hasTemperature": {
-                  "title": "Supports color temperature",
-                  "type": "boolean"
-                },
-                "isBluetooth": {
-                  "title": "Bluetooth device",
-                  "type": "boolean"
-                },
-                "isWiFi": {
-                  "title": "WiFi device",
-                  "type": "boolean"
-                }
-              }
-            }
           }
         }
       }

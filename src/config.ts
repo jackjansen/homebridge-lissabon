@@ -1,15 +1,12 @@
 import { PlatformConfig } from 'homebridge';
 
-export type LissabonDevice = {
+// What the accessory cache keeps about a lamp (accessory.context.device)
+export type LampContext = {
     hostname : string; // identity of the lamp, the same over WiFi and BLE (iotsa advertises it as the BLE name)
-    address : string;
     name : string;
-    type : string;
+    type : string; // the iotsa module, also the REST API name: dimmer or ledstrip
     hasBrightness : boolean;
     hasTemperature : boolean;
-    isBluetooth : boolean;
-    ipAddress? : string; // WiFi only: IPv4 address from mDNS, avoids slow .local lookups
-    lastSeen? : number; // ms since epoch when a transport last found the lamp
   };
 
 export type LissabonOptions = {
@@ -17,7 +14,6 @@ export type LissabonOptions = {
     discoverBle : boolean;
     wifiPollInterval? : number; // seconds between background reads of WiFi lamps
     blePollInterval? : number; // seconds between background reads of BLE lamps (each read wakes the lamp)
-    devices : LissabonDevice[];
   };
 
   type Config = {

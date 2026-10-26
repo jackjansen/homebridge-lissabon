@@ -1,6 +1,6 @@
 import { Logger } from 'homebridge';
 
-export type Transport = 'wifi' | 'ble' | 'mdns';
+export type Transport = 'wifi' | 'ble' | 'mdns' | 'none';
 
 export function reasonText(reason: unknown) : string {
   if (reason instanceof Error) {

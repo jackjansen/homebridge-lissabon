@@ -1,22 +1,19 @@
-import { PlatformAccessory } from 'homebridge';
-
-import { LissabonHomebridgePlatform } from './platform';
-import { LissabonLampAccessory, LampValues, LampValueName, kelvinToMireds, miredsToKelvin } from './lampAccessory';
-
 import { Peripheral, Characteristic as NobleCharacteristic } from '@stoprocent/noble';
 
+import { Capabilities, DeviceValueName, DeviceValues, LampTransport } from './transport';
+import { LampLog } from './lampLog';
 
 export const bleLissabonService = '6b2f000138bc4204a5061d3546ad3688';
-export const bleLissabonCharacteristic_isOn = '6b2f000238bc4204a5061d3546ad3688';
-export const bleLissabonCharacteristic_brightness = '6b2f000438bc4204a5061d3546ad3688';
-export const bleLissabonCharacteristic_temperature = '6b2f000538bc4204a5061d3546ad3688';
+const bleLissabonCharacteristic_isOn = '6b2f000238bc4204a5061d3546ad3688';
+const bleLissabonCharacteristic_brightness = '6b2f000438bc4204a5061d3546ad3688';
+const bleLissabonCharacteristic_temperature = '6b2f000538bc4204a5061d3546ad3688';
 
-// The firmware's brightness is uint16 (0..65535), HomeKit's is a percentage
+// The firmware's brightness is uint16 (0..65535), the transport's level is 0..1
 const bleBrightnessMax = 65535;
 
-const characteristicFor : Record<LampValueName, string> = {
+const characteristicFor : Record<DeviceValueName, string> = {
   isOn: bleLissabonCharacteristic_isOn,
-  brightness: bleLissabonCharacteristic_brightness,
+  level: bleLissabonCharacteristic_brightness,
   temperature: bleLissabonCharacteristic_temperature,
 };
 
@@ -24,23 +21,38 @@ const characteristicFor : Record<LampValueName, string> = {
  * A lamp reached over BLE, through the lissabon GATT service. Every read or write is a separate
  * connection: connect, discover, read or write, disconnect.
  */
-export class LissabonBlePlatformAccessory extends LissabonLampAccessory {
+export class LissabonBleTransport implements LampTransport {
+  readonly kind = 'ble';
+
   constructor(
-    platform: LissabonHomebridgePlatform,
-    accessory: PlatformAccessory,
-    private readonly noblePeripheral : Peripheral | undefined,
-    pollIntervalSeconds : number,
-  ) {
-    super(platform, accessory, 'ble', pollIntervalSeconds);
+    private readonly peripheral : Peripheral,
+    readonly capabilities : Capabilities,
+    private readonly lampLog : LampLog,
+  ) {}
+
+  // Connect to a lamp found by scanning and see which characteristics it has; undefined if it has no isOn
+  static async probe(peripheral : Peripheral, lampLog : LampLog) : Promise<Capabilities | undefined> {
+    const uuids = await new LissabonBleTransport(peripheral, { hasLevel: false, hasTemperature: false }, lampLog).withCharacteristics(
+      Object.values(characteristicFor),
+      async chars => chars.map(ch => ch.uuid),
+    );
+    if (!uuids.includes(bleLissabonCharacteristic_isOn)) {
+      return undefined;
+    }
+    return {
+      hasLevel: uuids.includes(bleLissabonCharacteristic_brightness),
+      hasTemperature: uuids.includes(bleLissabonCharacteristic_temperature),
+    };
+  }
+
+  describe() : string {
+    // macOS doesn't give the address, only a per-host id
+    return 'id ' + (this.peripheral.address || this.peripheral.id);
   }
 
   // Connect, find the wanted characteristics, run body, and always disconnect
   private async withCharacteristics<T>(uuids : string[], body : (chars : NobleCharacteristic[]) => Promise<T>) : Promise<T> {
-    const peripheral = this.noblePeripheral;
-    if (peripheral === undefined) {
-      // xxxjack should re-discover.
-      throw new Error('not BLE-discovered yet');
-    }
+    const peripheral = this.peripheral;
     if (peripheral.state !== 'disconnected') {
       throw new Error('peripheral busy (' + peripheral.state + ')');
     }
@@ -57,27 +69,24 @@ export class LissabonBlePlatformAccessory extends LissabonLampAccessory {
     }
   }
 
-  protected async readValues() : Promise<LampValues> {
+  async readValues() : Promise<DeviceValues> {
     const wanted = [bleLissabonCharacteristic_isOn];
-    if (this.device.hasBrightness) {
+    if (this.capabilities.hasLevel) {
       wanted.push(bleLissabonCharacteristic_brightness);
     }
-    if (this.device.hasTemperature) {
+    if (this.capabilities.hasTemperature) {
       wanted.push(bleLissabonCharacteristic_temperature);
     }
     return this.withCharacteristics(wanted, async chars => {
-      const values : LampValues = {};
+      const values : DeviceValues = {};
       for (const ch of chars) {
         const buf = await ch.readAsync();
         if (ch.uuid === bleLissabonCharacteristic_isOn && buf.length >= 1) {
           values.isOn = buf[0] !== 0;
         } else if (ch.uuid === bleLissabonCharacteristic_brightness && buf.length >= 2) {
-          values.brightness = Math.round(buf.readUInt16LE(0) * 100 / bleBrightnessMax);
+          values.level = buf.readUInt16LE(0) / bleBrightnessMax;
         } else if (ch.uuid === bleLissabonCharacteristic_temperature && buf.length >= 2) {
-          const kelvin = buf.readUInt16LE(0);
-          if (kelvin > 0) {
-            values.temperature = kelvinToMireds(kelvin);
-          }
+          values.temperature = buf.readUInt16LE(0);
         } else {
           this.lampLog.info('get: unexpected length ' + buf.length + ' for characteristic ' + ch.uuid);
         }
@@ -89,20 +98,20 @@ export class LissabonBlePlatformAccessory extends LissabonLampAccessory {
     });
   }
 
-  protected async writeValue(what : LampValueName, value : number | boolean) {
+  async writeValue(what : DeviceValueName, value : number | boolean) {
     let buf : Buffer;
     switch (what) {
     case 'isOn':
       buf = Buffer.alloc(1);
       buf[0] = value ? 1 : 0;
       break;
-    case 'brightness':
+    case 'level':
       buf = Buffer.alloc(2);
-      buf.writeUInt16LE(Math.round((value as number) * bleBrightnessMax / 100));
+      buf.writeUInt16LE(Math.round((value as number) * bleBrightnessMax));
       break;
     case 'temperature':
       buf = Buffer.alloc(2);
-      buf.writeUInt16LE(miredsToKelvin(value as number));
+      buf.writeUInt16LE(Math.round(value as number));
       break;
     }
     await this.withCharacteristics([characteristicFor[what]], async chars => {
