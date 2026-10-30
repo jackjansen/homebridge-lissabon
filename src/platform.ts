@@ -16,6 +16,9 @@ import { isIPv4 } from 'net';
 const defaultWifiPollInterval = 30;
 const defaultBlePollInterval = 300;
 
+// How long to wait before probing a lamp again after a failed BLE probe, seconds
+const bleProbeRetryInterval = 60;
+
 /**
  * The plugin: discovers lamps (mDNS for WiFi, scanning for BLE) and keeps one accessory per lamp,
  * identified by its hostname (Decided 1 in #1), whichever transports find it.
@@ -29,6 +32,9 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
 
   // One lamp accessory per accessory, by accessory UUID
   private readonly lamps = new Map<string, LissabonLampAccessory>();
+
+  // Peripherals whose BLE probe failed before, by id: only the first failure is logged as a warning
+  private readonly bleProbeFailed = new Set<string>();
 
   private options! : LissabonOptions;
 
@@ -204,7 +210,15 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
     try {
       capabilities = await LissabonBleTransport.probe(peripheral, lampLog);
     } catch(error) {
-      lampLog.warn('discovery failed: ' + reasonText(error), t0);
+      // The scan reports a peripheral only once, so without a retry the lamp would stay away until a restart
+      const message = `discovery failed: ${reasonText(error)}, retrying every ${bleProbeRetryInterval} s`;
+      if (this.bleProbeFailed.has(peripheral.id)) {
+        lampLog.debug(message, t0);
+      } else {
+        lampLog.warn(message, t0);
+        this.bleProbeFailed.add(peripheral.id);
+      }
+      setTimeout(() => void this.blePeripheralDiscovered(peripheral), bleProbeRetryInterval * 1000);
       return;
     }
     if (capabilities === undefined) {
