@@ -1,215 +1,110 @@
-<p align="center">
+# homebridge-lissabon
 
-<img src="https://github.com/homebridge/branding/raw/latest/logos/homebridge-wordmark-logo-vertical.png" width="150">
+A [Homebridge](https://homebridge.io) plugin that makes [Lissabon](https://github.com/cwi-dis/lissabon) lamps available in Apple HomeKit. Lissabon is a family of low-power lighting devices (dimmers and LED strips) built on the [iotsa](https://github.com/cwi-dis/iotsa) framework.
 
-</p>
+The plugin finds lamps by itself, over WiFi and over Bluetooth LE, and exposes each one as a HomeKit Lightbulb with on/off and, if the lamp has them, brightness and color temperature.
 
-<span align="center">
+## How it behaves
 
-# Homebridge Platform Plugin Template
+- **Discovery only.** Lamps are found through mDNS (`_iotsa._tcp`, for WiFi) and BLE scanning (the Lissabon GATT service). There is no list of lamps to configure.
+- **One accessory per lamp,** identified by the lamp's hostname, whichever way it is reached. A lamp seen over both WiFi and BLE is still one accessory.
+- **A lamp sticks to the transport it is using.** It uses the transport that found it first, and switches to the other one, if known, after two consecutive failures.
+- **HomeKit is answered from a cache.** Reads return at once and writes are queued, so a sleeping BLE lamp doesn't make HomeKit wait. The lamp is polled in the background and read back shortly after every write, so changes made elsewhere (a button, a remote) show up in HomeKit within one poll interval.
+- **Unreachable lamps show as "No Response"** in the Home app; the log says so too. The Homebridge web UI has no way of showing this.
+- **Lamps are never removed automatically,** because removing an accessory also removes it from its room, scenes and automations in Home, and a lamp may just be unplugged or in storage. Remove a lamp by hand when it is really gone: in the Home app, or with "Remove Single Cached Accessory" in the Homebridge UI.
+- **Two-channel lamps** expose only their main dimmer. Over BLE, switching such a lamp off also switches off the second channel, and it reads as on if either channel is on.
 
-</span>
+## Requirements
 
-> [!IMPORTANT]
-> **Homebridge v2.0 Information**
->
-> This template currently has a
-> - `package.json -> engines.homebridge` value of `"^1.8.0 || ^2.0.0-beta.0"`
-> - `package.json -> devDependencies.homebridge` value of `"^2.0.0-beta.0"`
->
-> This is to ensure that your plugin will build and run on both Homebridge v1 and v2.
->
-> Once Homebridge v2.0 has been released, you can remove the `-beta.0` in both places.
+- Homebridge 1.8 or later, or 2.x
+- Node.js 22 or 24
+- For WiFi discovery on Linux: the Avahi compatibility library and a compiler, to build the `mdns` module:
 
----
+  ```
+  sudo apt install -y build-essential python3 libavahi-compat-libdnssd-dev
+  ```
 
-This is a template Homebridge dynamic platform plugin and can be used as a base to help you get started developing your own plugin.
+## Installation
 
-This template should be used in conjunction with the [developer documentation](https://developers.homebridge.io/). A full list of all supported service types, and their characteristics is available on this site.
+The plugin is not published on npm, so it is built from a checkout. These instructions are for a Homebridge installed from the [Homebridge apt repository](https://github.com/homebridge/homebridge/wiki/Install-Homebridge-on-Debian-or-Ubuntu-Linux), which has its own Node.js in `/opt/homebridge/bin` and keeps its data in `/var/lib/homebridge`. Native modules must be built with the Node.js that runs Homebridge, so that one has to come first in the path.
 
-### Clone As Template
-
-Click the link below to create a new GitHub Repository using this template, or click the *Use This Template* button above.
-
-<span align="center">
-
-### [Create New Repository From Template](https://github.com/homebridge/homebridge-plugin-template/generate)
-
-</span>
-
-### Setup Development Environment
-
-To develop Homebridge plugins you must have Node.js 20 or later installed, and a modern code editor such as [VS Code](https://code.visualstudio.com/). This plugin template uses [TypeScript](https://www.typescriptlang.org/) to make development easier and comes with pre-configured settings for [VS Code](https://code.visualstudio.com/) and ESLint. If you are using VS Code install these extensions:
-
-- [ESLint](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint)
-
-### Install Development Dependencies
-
-Using a terminal, navigate to the project folder and run this command to install the development dependencies:
-
-```shell
-npm install
+```
+export PATH=/opt/homebridge/bin:$PATH
+git clone https://github.com/jackjansen/homebridge-lissabon.git
+cd homebridge-lissabon
+npm install && npm run build && npm pack
 ```
 
-### Update package.json
+Then install the resulting package into Homebridge, as the `homebridge` user. The package is copied into Homebridge's own directory because npm records its path, and because the `homebridge` user usually can't read your home directory.
 
-Open the [`package.json`](./package.json) and change the following attributes:
-
-- `name` - this should be prefixed with `homebridge-` or `@username/homebridge-`, is case-sensitive, and contains no spaces nor special characters apart from a dash `-`
-- `displayName` - this is the "nice" name displayed in the Homebridge UI
-- `homepage` - link to your GitHub repo's `README.md`
-- `repository.url` - link to your GitHub repo
-- `bugs.url` - link to your GitHub repo issues page
-
-When you are ready to publish the plugin you should set `private` to false, or remove the attribute entirely.
-
-### Update Plugin Defaults
-
-Open the [`src/settings.ts`](./src/settings.ts) file and change the default values:
-
-- `PLATFORM_NAME` - Set this to be the name of your platform. This is the name of the platform that users will use to register the plugin in the Homebridge `config.json`.
-- `PLUGIN_NAME` - Set this to be the same name you set in the [`package.json`](./package.json) file.
-
-Open the [`config.schema.json`](./config.schema.json) file and change the following attribute:
-
-- `pluginAlias` - set this to match the `PLATFORM_NAME` you defined in the previous step.
-
-See the [Homebridge API docs](https://developers.homebridge.io/#/config-schema#default-values) for more details on the other attributes you can set in the `config.schema.json` file.
-
-### Build Plugin
-
-TypeScript needs to be compiled into JavaScript before it can run. The following command will compile the contents of your [`src`](./src) directory and put the resulting code into the `dist` folder.
-
-```shell
-npm run build
+```
+sudo install -o homebridge -g homebridge jackjansen-homebridge-lissabon-*.tgz /var/lib/homebridge/homebridge-lissabon.tgz
+cd /var/lib/homebridge
+sudo -u homebridge -H env PATH=$PATH npm install ./homebridge-lissabon.tgz
 ```
 
-### Link To Homebridge
+### Bluetooth LE on Linux
 
-Run this command so your global installation of Homebridge can discover the plugin in your development environment:
+On Linux, the BLE library talks to the Bluetooth hardware directly, which needs extra rights for the Node.js binary:
 
-```shell
-npm link
+```
+sudo setcap cap_net_raw,cap_net_admin+eip /opt/homebridge/bin/node
 ```
 
-You can now start Homebridge, use the `-D` flag, so you can see debug log messages in your plugin:
+A Homebridge update that replaces Node.js removes these rights again, so this may need repeating. On macOS, the system asks for Bluetooth permission the first time instead.
 
-```shell
-homebridge -D
-```
+## Configuration
 
-### Watch For Changes and Build Automatically
+Add the platform to Homebridge's `config.json`, or use the settings form in the Homebridge UI:
 
-If you want to have your code compile automatically as you make changes, and restart Homebridge automatically between changes, you first need to add your plugin as a platform in `./test/hbConfig/config.json`:
-```
+```json
 {
-...
-    "platforms": [
-        {
-            "name": "Config",
-            "port": 8581,
-            "platform": "config"
-        },
-        {
-            "name": "<PLUGIN_NAME>",
-            //... any other options, as listed in config.schema.json ...
-            "platform": "<PLATFORM_NAME>"
-        }
-    ]
+    "platform": "LissabonLighting",
+    "name": "LissabonLighting",
+    "options": {
+        "discoverWifi": true,
+        "discoverBle": true
+    }
 }
 ```
 
-and then you can run:
+| Option | Default | Meaning |
+|---|---|---|
+| `discoverWifi` | off | Find lamps over WiFi, using mDNS |
+| `discoverBle` | off | Find lamps over Bluetooth LE |
+| `wifiPollInterval` | 30 | Seconds between background reads of a lamp over WiFi |
+| `blePollInterval` | 300 | Seconds between background reads of a lamp over BLE |
 
-```shell
-npm run watch
+Every BLE read wakes the lamp and keeps it awake for its `activityExtraWakeDuration`, so short BLE poll intervals cost battery on battery-powered lamps.
+
+Log lines have the form `[lamp] transport message (duration)`. Sets, discoveries and failures are logged normally; reads and connection steps only in Homebridge's debug mode.
+
+## Development
+
+```
+npm install
+npm run build
+npm link        # makes the checkout available to a globally installed Homebridge
+npm run lint
 ```
 
-This will launch an instance of Homebridge in debug mode which will restart every time you make a change to the source code. It will load the config stored in the default location under `~/.homebridge`. You may need to stop other running instances of Homebridge while using this command to prevent conflicts. You can adjust the Homebridge startup command in the [`nodemon.json`](./nodemon.json) file.
+After a code change, `npm run build` and a Homebridge restart are enough. To avoid disturbing a production bridge, test with a separate Homebridge instance that has its own bridge `username` and `port`.
 
-### Customise Plugin
+Source layout (`src/`):
 
-You can now start customising the plugin template to suit your requirements.
+| File | What |
+|---|---|
+| `platform.ts` | Discovery, and the bookkeeping of accessories |
+| `lampAccessory.ts` | One lamp as a HomeKit Lightbulb: cache, write queue, polling, choice of transport. Its class comment describes the control flow |
+| `transport.ts` | The interface of a transport, in device units, without HomeKit knowledge |
+| `iotsaRestTransport.ts` | The iotsa REST API, over WiFi |
+| `lissabonBleTransport.ts` | The Lissabon GATT service, over BLE, with timeouts |
+| `bleQueue.ts` | One BLE operation at a time, plugin-wide |
+| `deviceModel.ts` | Which iotsa modules are exposed to HomeKit |
+| `lampLog.ts` | The uniform log lines |
 
-- [`src/platform.ts`](./src/platform.ts) - this is where your device setup and discovery should go.
-- [`src/platformAccessory.ts`](./src/platformAccessory.ts) - this is where your accessory control logic should go, you can rename or create multiple instances of this file for each accessory type you need to implement as part of your platform plugin. You can refer to the [developer documentation](https://developers.homebridge.io/) to see what characteristics you need to implement for each service type.
-- [`config.schema.json`](./config.schema.json) - update the config schema to match the config you expect from the user. See the [Plugin Config Schema Documentation](https://developers.homebridge.io/#/config-schema).
+The design decisions and their reasons are in [issue #1](https://github.com/jackjansen/homebridge-lissabon/issues/1).
 
-### Versioning Your Plugin
+## License
 
-Given a version number `MAJOR`.`MINOR`.`PATCH`, such as `1.4.3`, increment the:
-
-1. **MAJOR** version when you make breaking changes to your plugin,
-2. **MINOR** version when you add functionality in a backwards compatible manner, and
-3. **PATCH** version when you make backwards compatible bug fixes.
-
-You can use the `npm version` command to help you with this:
-
-```shell
-# major update / breaking changes
-npm version major
-
-# minor update / new features
-npm version update
-
-# patch / bugfixes
-npm version patch
-```
-
-### Publish Package
-
-When you are ready to publish your plugin to [npm](https://www.npmjs.com/), make sure you have removed the `private` attribute from the [`package.json`](./package.json) file then run:
-
-```shell
-npm publish
-```
-
-If you are publishing a scoped plugin, i.e. `@username/homebridge-xxx` you will need to add `--access=public` to command the first time you publish.
-
-#### Publishing Beta Versions
-
-You can publish *beta* versions of your plugin for other users to test before you release it to everyone.
-
-```shell
-# create a new pre-release version (eg. 2.1.0-beta.1)
-npm version prepatch --preid beta
-
-# publish to @beta
-npm publish --tag beta
-```
-
-Users can then install the  *beta* version by appending `@beta` to the install command, for example:
-
-```shell
-sudo npm install -g homebridge-example-plugin@beta
-```
-
-### Best Practices
-
-Consider creating your plugin with the [Homebridge Verified](https://github.com/homebridge/verified) criteria in mind. This will help you to create a plugin that is easy to use and works well with Homebridge.
-You can then submit your plugin to the Homebridge Verified list for review.
-The most up-to-date criteria can be found [here](https://github.com/homebridge/verified#requirements).
-For reference, the current criteria are:
-
-- **General**
-  - The plugin must be of type [dynamic platform](https://developers.homebridge.io/#/#dynamic-platform-template).
-  - The plugin must not offer the same nor less functionality than that of any existing **verified** plugin.
-- **Repo**
-  - The plugin must be published to NPM and the source code available on a GitHub repository, with issues enabled.
-  - A GitHub release should be created for every new version of your plugin, with release notes.
-- **Environment**
-  - The plugin must run on all [supported LTS versions of Node.js](https://github.com/homebridge/homebridge/wiki/How-To-Update-Node.js), at the time of writing this is Node v18, v20 and v22.
-  - The plugin must successfully install and not start unless it is configured.
-  - The plugin must not execute post-install scripts that modify the users' system in any way.
-  - The plugin must not require the user to run Homebridge in a TTY or with non-standard startup parameters, even for initial configuration.
-- **Codebase**
-  - The plugin must implement the [Homebridge Plugin Settings GUI](https://developers.homebridge.io/#/config-schema).
-  - The plugin must not contain any analytics or calls that enable you to track the user.
-  - If the plugin needs to write files to disk (cache, keys, etc.), it must store them inside the Homebridge storage directory.
-  - The plugin must not throw unhandled exceptions, the plugin must catch and log its own errors.
-
-### Useful Links
-
-Note these links are here for help but are not supported/verified by the Homebridge team
-
-- [Custom Characteristics](https://github.com/homebridge/homebridge-plugin-template/issues/20)
+Apache-2.0, see [LICENSE](LICENSE).
