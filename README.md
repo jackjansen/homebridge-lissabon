@@ -40,13 +40,21 @@ sudo -u homebridge -H env PATH=$PATH npm install ./homebridge-lissabon.tgz
 
 ### Bluetooth LE on Linux
 
-On Linux, the BLE library talks to the Bluetooth hardware directly, which needs extra rights for the Node.js binary:
+The adapter must be switched on. On a fresh Raspberry Pi OS it can be blocked in software; the plugin then logs `BLE: adapter state is poweredOff, not scanning`.
 
 ```
-sudo setcap cap_net_raw,cap_net_admin+eip /opt/homebridge/bin/node
+rfkill list bluetooth              # want: Soft blocked: no, Hard blocked: no
+sudo rfkill unblock bluetooth
+sudo bluetoothctl power on
 ```
 
-A Homebridge update that replaces Node.js removes these rights again, so this may need repeating. On macOS, the system asks for Bluetooth permission the first time instead.
+The BLE library talks to the Bluetooth hardware directly, next to the system's `bluetoothd`. A Homebridge installed from the apt repository has the rights for that through its service file. With another kind of install, you may need to give them to Node.js:
+
+```
+sudo setcap cap_net_raw,cap_net_admin+eip $(which node)
+```
+
+On macOS, the system asks for Bluetooth permission the first time instead.
 
 ## Configuration
 
