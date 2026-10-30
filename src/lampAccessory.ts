@@ -2,7 +2,7 @@ import { Service, PlatformAccessory, CharacteristicValue, WithUUID, Characterist
 
 import { LissabonHomebridgePlatform } from './platform';
 import { LampContext } from './config';
-import { LampLog } from './lampLog';
+import { LampLog, reasonText } from './lampLog';
 import { DeviceValues, LampTransport, TransportKind, describeCapabilities } from './transport';
 
 // HomeKit's ColorTemperature range, in mireds
@@ -31,7 +31,7 @@ const switchAfterFailures = 2;
  * One lamp as a HomeKit Lightbulb. HomeKit reads are answered from cached state, HomeKit writes go into a
  * write queue, and the lamp is polled in the background (Decided 2 and 9 in #1). Reads and writes for one
  * lamp happen one at a time, over the current transport. The lamp keeps every transport that has found it,
- * and sticks to the one in use until it fails (Decided 3).
+ * and sticks to the one in use until it fails (Decided 3). When all of them fail it shows as No Response.
  *
  * Control flow. The platform creates one of these per lamp and hands it transports (addTransport); after
  * that, HomeKit requests never pass through the platform. The constructor registers onSet/onGet callbacks
@@ -127,6 +127,8 @@ export class LissabonLampAccessory {
       this.platform.api.updatePlatformAccessories([this.accessory]);
     }
     if (this.current === undefined) {
+      this.consecutiveFailures = 0;
+      this.reachable = true;
       this.useTransport(transport.kind, 'found');
     } else if (!known && this.current !== transport.kind) {
       this.log().info(`also reachable over ${transport.kind} (${transport.describe()}), staying on ${this.current}`);
@@ -135,8 +137,6 @@ export class LissabonLampAccessory {
 
   private useTransport(kind : TransportKind, why : string) {
     this.current = kind;
-    this.consecutiveFailures = 0;
-    this.reachable = true;
     const transport = this.transports.get(kind)!;
     this.log().info(`using ${transport.describe()}, ${describeCapabilities(transport.capabilities)}, ${why}`);
     clearInterval(this.pollTimer);
@@ -229,7 +229,12 @@ export class LissabonLampAccessory {
     try {
       values = await transport.readValues();
     } catch(error) {
-      this.log().failed('get', 'values', error, t0);
+      // Once the lamp is known to be unreachable, repeating this at every poll is only noise
+      if (this.reachable) {
+        this.log().failed('get', 'values', error, t0);
+      } else {
+        this.log().debug('get values failed: ' + reasonText(error), t0);
+      }
       this.noteResult(false);
       return;
     }
@@ -254,17 +259,20 @@ export class LissabonLampAccessory {
       }
       return;
     }
+    // Failures count across transports: a lamp that fails on every transport it has is really unreachable.
+    // It keeps trying all of them, so it comes back by itself.
     this.consecutiveFailures++;
-    if (this.consecutiveFailures < switchAfterFailures) {
+    if (this.consecutiveFailures % switchAfterFailures !== 0) {
       return;
     }
-    const other : TransportKind = this.current === 'wifi' ? 'ble' : 'wifi';
-    if (this.transports.has(other)) {
-      this.useTransport(other, `after ${this.consecutiveFailures} failures over ${this.current}`);
-    } else if (this.reachable) {
+    if (this.reachable && this.consecutiveFailures >= switchAfterFailures * this.transports.size) {
       this.log().warn('not reachable, HomeKit shows it as No Response');
       this.reachable = false;
       this.showUnreachable();
+    }
+    const other : TransportKind = this.current === 'wifi' ? 'ble' : 'wifi';
+    if (this.transports.has(other)) {
+      this.useTransport(other, `after ${switchAfterFailures} failures over ${this.current}`);
     }
   }
 

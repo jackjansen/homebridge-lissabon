@@ -8,7 +8,7 @@ The plugin finds lamps by itself, over WiFi and over Bluetooth LE, and exposes e
 
 - **Discovery only.** Lamps are found through mDNS (`_iotsa._tcp`, for WiFi) and BLE scanning (the Lissabon GATT service). There is no list of lamps to configure.
 - **One accessory per lamp,** identified by the lamp's hostname, whichever way it is reached. A lamp seen over both WiFi and BLE is still one accessory.
-- **A lamp sticks to the transport it is using.** It uses the transport that found it first, and switches to the other one, if known, after two consecutive failures.
+- **A lamp sticks to the transport it is using.** It uses the transport that found it first, and switches to the other one, if known, after two consecutive failures. A lamp that fails on all its transports shows as "No Response", and keeps being tried.
 - **HomeKit is answered from a cache.** Reads return at once and writes are queued, so a sleeping BLE lamp doesn't make HomeKit wait. The lamp is polled in the background and read back shortly after every write, so changes made elsewhere (a button, a remote) show up in HomeKit within one poll interval.
 - **Unreachable lamps show as "No Response"** in the Home app; the log says so too. The Homebridge web UI has no way of showing this.
 - **Lamps are never removed automatically,** because removing an accessory also removes it from its room, scenes and automations in Home, and a lamp may just be unplugged or in storage. Remove a lamp by hand when it is really gone: in the Home app, or with "Remove Single Cached Accessory" in the Homebridge UI.
@@ -18,15 +18,10 @@ The plugin finds lamps by itself, over WiFi and over Bluetooth LE, and exposes e
 
 - Homebridge 1.8 or later, or 2.x
 - Node.js 22 or 24
-- For WiFi discovery on Linux: the Avahi compatibility library and a compiler, to build the `mdns` module:
-
-  ```
-  sudo apt install -y build-essential python3 libavahi-compat-libdnssd-dev
-  ```
 
 ## Installation
 
-The plugin is not published on npm, so it is built from a checkout. These instructions are for a Homebridge installed from the [Homebridge apt repository](https://github.com/homebridge/homebridge/wiki/Install-Homebridge-on-Debian-or-Ubuntu-Linux), which has its own Node.js in `/opt/homebridge/bin` and keeps its data in `/var/lib/homebridge`. Native modules must be built with the Node.js that runs Homebridge, so that one has to come first in the path.
+The plugin is not published on npm, so it is built from a checkout. These instructions are for a Homebridge installed from the [Homebridge apt repository](https://github.com/homebridge/homebridge/wiki/Install-Homebridge-on-Debian-or-Ubuntu-Linux), which has its own Node.js in `/opt/homebridge/bin` and keeps its data in `/var/lib/homebridge`. Build with the Node.js that runs Homebridge, so that one has to come first in the path.
 
 ```
 export PATH=/opt/homebridge/bin:$PATH
