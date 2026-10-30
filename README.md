@@ -54,6 +54,8 @@ The BLE library talks to the Bluetooth hardware directly, next to the system's `
 sudo setcap cap_net_raw,cap_net_admin+eip $(which node)
 ```
 
+On a Raspberry Pi, WiFi and Bluetooth share one radio, and heavy WiFi traffic can make BLE connections fail (`Disconnected 8`, connect timeouts). If the Pi has ethernet, switching WiFi off solves that: `sudo nmcli radio wifi off`.
+
 On macOS, the system asks for Bluetooth permission the first time instead.
 
 ## Configuration

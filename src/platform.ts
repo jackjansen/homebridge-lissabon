@@ -6,6 +6,7 @@ import { LampLog, reasonText } from './lampLog';
 import { LissabonLampAccessory } from './lampAccessory';
 import { lampModuleFor } from './deviceModel';
 import { LampTransport, TransportKind, describeCapabilities } from './transport';
+import { isIdle, setIdleCallback } from './bleQueue';
 import { IotsaRestTransport } from './iotsaRestTransport';
 import { LissabonBleTransport, bleLissabonService } from './lissabonBleTransport';
 import noble, { Peripheral } from '@stoprocent/noble';
@@ -18,6 +19,9 @@ const defaultBlePollInterval = 300;
 
 // How long to wait before probing a lamp again after a failed BLE probe, seconds
 const bleProbeRetryInterval = 60;
+
+// How long the BLE queue must stay idle before scanning is restarted, milliseconds
+const bleScanRestartDelayMs = 1000;
 
 /**
  * The plugin: discovers lamps (mDNS for WiFi, scanning for BLE) and keeps one accessory per lamp,
@@ -35,6 +39,11 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
 
   // Peripherals whose BLE probe failed before, by id: only the first failure is logged as a warning
   private readonly bleProbeFailed = new Set<string>();
+
+  // Peripherals already being handled, by id: a restarted scan reports them again
+  private readonly bleSeen = new Set<string>();
+
+  private bleScanWanted = false;
 
   private options! : LissabonOptions;
 
@@ -185,15 +194,28 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
     noble.on('stateChange', async (state) => {
       if (state === 'poweredOn') {
         this.log.info('BLE: Starting BLE scan for Lissabon devices...');
+        this.bleScanWanted = true;
         noble.startScanning([bleLissabonService], false);
       } else {
         // E.g. poweredOff: on Linux, check hciconfig and rfkill
         this.log.warn('BLE: adapter state is ' + state + ', not scanning');
+        this.bleScanWanted = false;
         await noble.stopScanningAsync();
       }
     });
     noble.on('discover', (peripheral : Peripheral) => {
-      void this.blePeripheralDiscovered(peripheral);
+      if (!this.bleSeen.has(peripheral.id)) {
+        this.bleSeen.add(peripheral.id);
+        void this.blePeripheralDiscovered(peripheral);
+      }
+    });
+    // Linux's binding stops scanning for a connection and doesn't resume, which would hide lamps seen later
+    setIdleCallback(() => {
+      setTimeout(() => {
+        if (this.bleScanWanted && isIdle()) {
+          noble.startScanning([bleLissabonService], false);
+        }
+      }, bleScanRestartDelayMs);
     });
   }
 
