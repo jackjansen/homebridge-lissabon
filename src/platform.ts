@@ -9,7 +9,7 @@ import { LampTransport, TransportKind, describeCapabilities } from './transport'
 import { IotsaRestTransport } from './iotsaRestTransport';
 import { LissabonBleTransport, bleLissabonService } from './lissabonBleTransport';
 import noble, { Peripheral } from '@stoprocent/noble';
-import mdns from 'mdns';
+import { Bonjour, Service as MdnsService } from 'bonjour-service';
 import { isIPv4 } from 'net';
 
 // Default poll intervals, seconds (Decided 9 in #1)
@@ -135,23 +135,24 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
   }
 
   private discoverWifiDevices() {
-    const browser = mdns.createBrowser(mdns.tcp('_iotsa'));
-    browser.on('serviceUp', (service: mdns.Service) => {
+    // find() starts browsing, and keeps listening for lamps that appear later
+    const browser = new Bonjour().find({ type: 'iotsa' });
+    browser.on('up', (service : MdnsService) => {
       void this.mdnsServiceUp(service);
     });
-    browser.on('serviceDown', (service: mdns.Service) => {
-      new LampLog(this.log, service.name ?? '?', 'mdns').debug('service down');
+    browser.on('down', (service : MdnsService) => {
+      new LampLog(this.log, service.name, 'mdns').debug('service down');
     });
-    browser.start();
     this.log.info('mDNS: Started browsing for services.');
   }
 
-  private async mdnsServiceUp(service : mdns.Service) {
+  private async mdnsServiceUp(service : MdnsService) {
     const name = service.name;
-    const module = lampModuleFor(Object.keys(service.txtRecord ?? {}));
+    const module = lampModuleFor(Object.keys(service.txt ?? {}));
+    const addresses = service.addresses ?? [];
     if (name === undefined || name === '') {
       // Without a name there is no hostname, and so no identity
-      this.log.debug('mDNS: service without name, ignoring:', service.addresses);
+      this.log.debug('mDNS: service without name, ignoring:', addresses);
       return;
     }
     if (module === undefined) {
@@ -159,9 +160,9 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
       return;
     }
     const lampLog = new LampLog(this.log, name, 'mdns');
-    lampLog.debug('service up, addresses ' + service.addresses.join(' '));
+    lampLog.debug('service up, addresses ' + addresses.join(' '));
     // The IPv4 address avoids a slow .local lookup on macOS (Decided 5 in #1)
-    const address = service.addresses.find(a => isIPv4(a)) ?? name + '.local.';
+    const address = addresses.find(a => isIPv4(a)) ?? name + '.local.';
     let capabilities;
     try {
       capabilities = await IotsaRestTransport.probe(address, module);
