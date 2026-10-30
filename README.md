@@ -88,9 +88,29 @@ npm link        # makes the checkout available to a globally installed Homebridg
 npm run lint
 ```
 
-After a code change, `npm run build` and a Homebridge restart are enough. To avoid disturbing a production bridge, test with a separate Homebridge instance that has its own bridge `username` and `port`.
+### Running a test server
 
-Source layout (`src/`):
+To avoid disturbing a production bridge, test with a separate Homebridge instance that has its own bridge `username` and `port`. Don't run it next to a production instance that uses the same lamps over BLE: both would keep connecting to them.
+
+On a development machine, install Homebridge and its web UI globally, once, and link the plugin as above:
+
+```
+npm install -g homebridge homebridge-config-ui-x
+```
+
+Start the server in a separate terminal. It stays in the foreground, and Ctrl-C stops it:
+
+```
+hb-service run
+```
+
+The web UI is at <http://localhost:8581>, and the configuration and accessory cache are in `~/.homebridge`. Add the platform in the UI as described under [Configuration](#configuration).
+
+After a code change, `npm run build` and a restart from the UI are enough. Debug log lines need Homebridge's debug mode (in the UI's Homebridge settings, or `-D`). The UI's Accessories page can show stale tiles after accessories change: reload the page.
+
+### Source layout
+
+Everything is in `src/`:
 
 | File | What |
 |---|---|
