@@ -181,7 +181,8 @@ export class LissabonHomebridgePlatform implements DynamicPlatformPlugin {
         this.log.info('BLE: Starting BLE scan for Lissabon devices...');
         noble.startScanning([bleLissabonService], false);
       } else {
-        this.log.info('BLE: Stopping BLE scan...');
+        // E.g. poweredOff: on Linux, check hciconfig and rfkill
+        this.log.warn('BLE: adapter state is ' + state + ', not scanning');
         await noble.stopScanningAsync();
       }
     });
