@@ -70,6 +70,8 @@ Add the platform to Homebridge's `config.json`, or use the settings form in the 
 | `wifiPollInterval` | 30 | Seconds between background reads of a lamp over WiFi |
 | `blePollInterval` | 300 | Seconds between background reads of a lamp over BLE |
 
+Restart Homebridge to load the plugin or apply a change in the configuration: from the UI, or with `sudo hb-service restart`.
+
 Every BLE read wakes the lamp and keeps it awake for its `activityExtraWakeDuration`, so short BLE poll intervals cost battery on battery-powered lamps.
 
 Log lines have the form `[lamp] transport message (duration)`. Sets, discoveries and failures are logged normally; reads and connection steps only in Homebridge's debug mode.
